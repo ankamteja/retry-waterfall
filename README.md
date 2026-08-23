@@ -148,3 +148,7 @@ Say these before a judge finds them.
 6. **The LLM writes language only.** It never makes a decision. Every number in its explanations comes from the audit trail. This is a design choice, but it means the "AI" in the demo is mostly the bandit, not the language model.
 
 7. **`domain_rules.py` encodes regulation as checked on 2026-08-22.** NPCI and RBI update circulars periodically. The cap, windows, and AFA thresholds should be re-verified before any production use.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
