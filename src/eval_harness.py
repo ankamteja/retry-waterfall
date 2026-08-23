@@ -17,20 +17,15 @@ Design notes (why it's built this way, not simpler):
   batch requirement).
 """
 
+import hashlib
 import json
 import os
-import random
 import statistics
 
-from domain_rules import RETRY_WINDOWS_HOURS, is_hard_decline
+from domain_rules import RETRY_WINDOWS_HOURS, is_hard_decline, requires_additional_factor_auth
 from synthetic_data import generate_batch, recovery_probability
 from policies import BaselinePolicy, BanditPolicy, OraclePolicy, CHANNEL_COST_INR
 from audit_log import AuditLog, AuditRecord
-
-# Fixed per-policy RNG offsets. Must NOT be hash(policy.name): Python
-# randomizes string hashes per process, which made the headline number
-# swing between runs (62.7% -> 19.8% on identical code).
-POLICY_RNG_OFFSET = {"baseline": 11, "bandit": 3391, "oracle": 7717}
 
 N_SEEDS = 200
 HEADLINE_N = 60
@@ -40,12 +35,29 @@ LEARNING_CURVE_CHECKPOINTS = [50, 100, 200, 400, 800]
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 
-def run_policy_on_batch(policy, events, rng, audit_log: AuditLog | None = None) -> dict:
+def outcome_draw(seed: int, payment_id: str, window_hours: int, channel: str) -> float:
+    """Common random numbers: the uniform draw deciding whether an attempt
+    succeeds depends only on (world, payment, window, channel) -- never on
+    which policy is asking, or on how many draws that policy has already
+    made.
+
+    Without this each policy walks its own RNG stream, so baseline and
+    bandit face different luck on the same payment and the comparison
+    carries avoidable variance. Coupling the worlds means that when two
+    policies make the same choice they get the same outcome, and any
+    difference in results is attributable to the decisions themselves.
+    """
+    h = hashlib.sha256(f"{seed}|{payment_id}|{window_hours}|{channel}".encode()).digest()
+    return int.from_bytes(h[:8], "big") / 2**64
+
+
+def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None) -> dict:
     total_gross = 0.0
     total_cost = 0.0
     recovered_count = 0
     exceptions = []  # payment_ids that exhausted retries unresolved
     hard_declines = 0
+    afa_escalations = 0
 
     for event in events:
         if is_hard_decline(event.decline_code):
@@ -57,6 +69,25 @@ def run_policy_on_batch(policy, events, rng, audit_log: AuditLog | None = None) 
                     window_hours=None, channel=None, amount_inr=event.amount_inr,
                     expected_net_inr=None, rationale="hard decline: not retryable, compliance no-retry",
                     recovered=None, stopping_rule="hard_decline_no_retry",
+                ))
+            continue
+
+        # RBI additional-factor-auth. Above the threshold the customer must
+        # re-authenticate, so a silent background retry cannot legally
+        # succeed however good the policy is. These are routed to an
+        # authenticated payment link instead of consuming a mandate attempt.
+        if requires_additional_factor_auth(event.amount_inr, event.category):
+            afa_escalations += 1
+            if audit_log:
+                audit_log.write(AuditRecord(
+                    payment_id=event.payment_id, policy=policy.name,
+                    decline_code=event.decline_code.value, attempt_number=1,
+                    window_hours=None, channel=None, amount_inr=event.amount_inr,
+                    expected_net_inr=None,
+                    rationale=(f"amount exceeds RBI AFA threshold for category "
+                               f"'{event.category}': customer re-authentication required, "
+                               f"silent auto-debit retry not permitted"),
+                    recovered=None, stopping_rule="afa_required_escalate_to_auth_link",
                 ))
             continue
 
@@ -79,7 +110,7 @@ def run_policy_on_batch(policy, events, rng, audit_log: AuditLog | None = None) 
                 continue
 
             true_p = recovery_probability(event.decline_code, window_hours, decision.channel)
-            success = rng.random() < true_p
+            success = outcome_draw(seed, event.payment_id, window_hours, decision.channel) < true_p
             policy.update(event.decline_code, window_hours, decision.channel, success)
             total_cost += CHANNEL_COST_INR[decision.channel]
 
@@ -106,6 +137,7 @@ def run_policy_on_batch(policy, events, rng, audit_log: AuditLog | None = None) 
         "policy": policy.name,
         "n_events": len(events),
         "hard_declines": hard_declines,
+        "afa_escalations": afa_escalations,
         "recovered_count": recovered_count,
         "recovery_rate": recovered_count / len(events) if events else 0.0,
         "gross_recovered_inr": round(total_gross, 2),
@@ -125,9 +157,8 @@ def run_one_seed(n: int, seed: int, audit_dir: str | None = None) -> dict:
         if audit_dir:
             os.makedirs(audit_dir, exist_ok=True)
             audit_log = AuditLog(os.path.join(audit_dir, f"audit_{policy.name}_seed{seed}.jsonl"))
-        rng = random.Random(seed * 7919 + POLICY_RNG_OFFSET[policy.name])
         try:
-            results[policy.name] = run_policy_on_batch(policy, events, rng, audit_log)
+            results[policy.name] = run_policy_on_batch(policy, events, seed, audit_log)
         finally:
             if audit_log:
                 audit_log.close()
@@ -162,6 +193,20 @@ def print_headline_report(all_seed_results: list[dict]) -> None:
     print(f"\nBandit captures {captured:.1f}% of achievable lift over baseline (oracle = 100%)" if captured is not None
           else "\nNo achievable lift over baseline at this batch size.")
 
+    # Paired test. Outcomes are coupled across policies (see outcome_draw),
+    # so per-seed differences are genuinely paired and the standard error of
+    # the mean difference is the right uncertainty on the lift -- far tighter
+    # than comparing two independent means.
+    diffs = [r["bandit"]["net_recovered_inr"] - r["baseline"]["net_recovered_inr"]
+             for r in all_seed_results]
+    n = len(diffs)
+    mean_d = statistics.mean(diffs)
+    se_d = statistics.stdev(diffs) / (n ** 0.5)
+    wins = sum(1 for d in diffs if d > 0)
+    print(f"Paired lift over baseline: {mean_d:+,.0f} INR/batch "
+          f"(95% CI {mean_d - 1.96*se_d:+,.0f} to {mean_d + 1.96*se_d:+,.0f}, n={n} seeds)")
+    print(f"Bandit beat baseline in {wins}/{n} batches ({wins/n:.0%})")
+
 
 def run_learning_curve(seeds: list[int] = (0, 1, 2)) -> dict:
     """Same policies, larger batch, checkpointed net recovery -- shows the
@@ -172,11 +217,10 @@ def run_learning_curve(seeds: list[int] = (0, 1, 2)) -> dict:
         events = generate_batch(n=LEARNING_CURVE_N, seed=seed)
         for policy_cls in (BaselinePolicy, BanditPolicy, OraclePolicy):
             policy = policy_cls(seed=seed) if policy_cls is BanditPolicy else policy_cls()
-            rng = random.Random(seed * 7919 + POLICY_RNG_OFFSET[policy.name])
             cumulative_net = 0.0
             checkpoint_idx = 0
             for i, event in enumerate(events, start=1):
-                result = run_policy_on_batch(policy, [event], rng)
+                result = run_policy_on_batch(policy, [event], seed)
                 cumulative_net += result["net_recovered_inr"]
                 while checkpoint_idx < len(LEARNING_CURVE_CHECKPOINTS) and i == LEARNING_CURVE_CHECKPOINTS[checkpoint_idx]:
                     curve[policy.name][LEARNING_CURVE_CHECKPOINTS[checkpoint_idx]].append(cumulative_net)
