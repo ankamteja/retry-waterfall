@@ -14,6 +14,10 @@ docs/plan.md
 data/*
 !data/explanations.json
 
+# Vercel build output and local CLI state
+public/
+.vercel/
+
 # Internal working notes, kept on disk and out of the public repo
 docs/BUILD_LOG.md
 docs/NEXT.md
