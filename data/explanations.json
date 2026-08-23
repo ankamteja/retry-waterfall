@@ -1,0 +1,121 @@
+{
+  "pay_0000": {
+    "case": {
+      "payment_id": "pay_0000",
+      "amount_inr": 1204.01,
+      "decline_code": "mandate_revoked",
+      "outcome": "refused_hard_decline",
+      "attempt_count": 0,
+      "channels_used": [],
+      "windows_used": [],
+      "recovered_on_window_hours": null,
+      "stopping_rule": "hard_decline_no_retry"
+    },
+    "explanation": "The payment for \u20b91,204.01 was declined because the customer revoked their payment mandate, which means they've withdrawn permission for automatic debits. The system classified this as a hard decline and did not attempt recovery because retrying a revoked mandate will fail and could trigger compliance issues. No further action will be taken on this payment.",
+    "source": "llm"
+  },
+  "pay_0004": {
+    "case": {
+      "payment_id": "pay_0004",
+      "amount_inr": 15535.55,
+      "decline_code": "insufficient_funds",
+      "outcome": "exhausted_retries",
+      "attempt_count": 3,
+      "channels_used": [
+        "ivr_call"
+      ],
+      "windows_used": [
+        24,
+        72,
+        168
+      ],
+      "recovered_on_window_hours": null,
+      "stopping_rule": "npci_retry_cap_exhausted"
+    },
+    "explanation": "The payment of \u20b915,535.55 failed because the customer had insufficient funds in their account. We attempted recovery three times using IVR calls at 24 hours, 72 hours, and 168 hours after the initial decline, but the payment was not recovered. The system stopped trying because we reached the NPCI-mandated retry limit, and no further recovery attempts are permitted.",
+    "source": "llm"
+  },
+  "pay_0003": {
+    "case": {
+      "payment_id": "pay_0003",
+      "amount_inr": 12716.23,
+      "decline_code": "bank_server_timeout",
+      "outcome": "recovered",
+      "attempt_count": 1,
+      "channels_used": [
+        "ivr_call"
+      ],
+      "windows_used": [
+        24
+      ],
+      "recovered_on_window_hours": 24,
+      "stopping_rule": null
+    },
+    "explanation": "The payment of \u20b912,716.23 initially failed because the bank's server timed out during processing. We recovered it on the first attempt by calling the customer through IVR within 24 hours, and the payment went through successfully. No further action is needed since the full amount has been collected.",
+    "source": "llm"
+  },
+  "pay_0007": {
+    "case": {
+      "payment_id": "pay_0007",
+      "amount_inr": 8041.68,
+      "decline_code": "insufficient_funds",
+      "outcome": "exhausted_retries",
+      "attempt_count": 3,
+      "channels_used": [
+        "sms"
+      ],
+      "windows_used": [
+        24,
+        72,
+        168
+      ],
+      "recovered_on_window_hours": null,
+      "stopping_rule": "npci_retry_cap_exhausted"
+    },
+    "explanation": "The payment of \u20b98,041.68 failed because the customer had insufficient funds, and we attempted recovery three times via SMS at 24, 72, and 168 hours after the initial decline. We stopped after the third attempt because we hit the NPCI regulatory limit on retry attempts, so this payment will not be automatically retried further. The merchant can reach out to the customer directly to request manual payment if needed.",
+    "source": "llm"
+  },
+  "pay_0008": {
+    "case": {
+      "payment_id": "pay_0008",
+      "amount_inr": 24171.84,
+      "decline_code": "issuer_soft_decline",
+      "outcome": "exhausted_retries",
+      "attempt_count": 3,
+      "channels_used": [
+        "ivr_call",
+        "sms"
+      ],
+      "windows_used": [
+        24,
+        72,
+        168
+      ],
+      "recovered_on_window_hours": null,
+      "stopping_rule": "npci_retry_cap_exhausted"
+    },
+    "explanation": "The system tried to recover \u20b924,171.84 three times over seven days using automated calls and SMS after the bank temporarily declined the payment, but the customer never completed the transaction. Recovery stopped because we hit the regulatory limit on retry attempts set by NPCI, so the merchant will need to reach out to the customer directly or write off this amount.",
+    "source": "llm"
+  },
+  "pay_0013": {
+    "case": {
+      "payment_id": "pay_0013",
+      "amount_inr": 4938.46,
+      "decline_code": "insufficient_funds",
+      "outcome": "exhausted_retries",
+      "attempt_count": 3,
+      "channels_used": [
+        "ivr_call"
+      ],
+      "windows_used": [
+        24,
+        72,
+        168
+      ],
+      "recovered_on_window_hours": null,
+      "stopping_rule": "npci_retry_cap_exhausted"
+    },
+    "explanation": "The payment of \u20b94,938.46 failed because the customer's account had insufficient funds, and our system attempted recovery three times using IVR calls at 24 hours, 72 hours, and 7 days after the initial decline. We've stopped further retry attempts because we reached the NPCI-mandated retry limit for this payment, which means the merchant will need to request a fresh payment authorization from the customer to collect this amount.",
+    "source": "llm"
+  }
+}
