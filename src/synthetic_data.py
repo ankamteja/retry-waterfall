@@ -31,12 +31,16 @@ WINDOW_MULTIPLIER = {
     DeclineCode.ISSUER_SOFT_DECLINE: {24: 0.8, 72: 1.0, 168: 1.1},
 }
 
-# Multiplier by contact channel. IVR is the most persuasive nudge but the
-# most expensive (see CHANNEL_COST_INR in policies.py).
+# Multiplier by contact channel. Two channels only, kept deliberately small
+# so the bandit's (context x window x channel) arm space fits the n=60
+# sample budget (see docs/plan.md eval-design note). IVR is the more
+# persuasive nudge but the more expensive one (see CHANNEL_COST_INR in
+# policies.py) -- that cost/effectiveness tradeoff is exactly what the
+# bandit has to learn.
 CHANNEL_MULTIPLIER = {
-    DeclineCode.INSUFFICIENT_FUNDS: {"sms": 1.0, "push": 0.9, "email": 0.8, "ivr_call": 1.15},
-    DeclineCode.BANK_SERVER_TIMEOUT: {"sms": 1.0, "push": 1.0, "email": 1.0, "ivr_call": 1.05},
-    DeclineCode.ISSUER_SOFT_DECLINE: {"sms": 0.9, "push": 1.0, "email": 0.75, "ivr_call": 1.3},
+    DeclineCode.INSUFFICIENT_FUNDS: {"sms": 1.0, "ivr_call": 1.15},
+    DeclineCode.BANK_SERVER_TIMEOUT: {"sms": 1.0, "ivr_call": 1.05},
+    DeclineCode.ISSUER_SOFT_DECLINE: {"sms": 0.9, "ivr_call": 1.3},
 }
 
 

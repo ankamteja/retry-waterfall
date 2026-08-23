@@ -5,3 +5,4 @@ venv/
 *.jsonl
 .env
 docs/plan.md
+data/
