@@ -29,13 +29,13 @@ RACE_CSS = r"""
 .race{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
   border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:18px 0;}
 @media(max-width:820px){.race{grid-template-columns:1fr;}}
-.lane{background:var(--surface);padding:18px 20px;position:relative;transition:background .3s;}
-.lane.win{background:linear-gradient(180deg,rgba(59,155,125,.08),var(--surface));}
-.lane h4{margin:0 0 3px;font-family:"Space Grotesk",sans-serif;font-size:.98rem;font-weight:700;}
-.lane .sub{color:var(--dim);font-size:.78rem;margin-bottom:14px;}
-.lane .big{font-family:"Space Grotesk",sans-serif;font-size:1.85rem;font-weight:700;
+.rlane{background:var(--surface);padding:18px 20px;position:relative;transition:background .3s;}
+.rlane.ahead{background:linear-gradient(180deg,rgba(59,155,125,.08),var(--surface));}
+.rlane h4{margin:0 0 3px;font-family:"Space Grotesk",sans-serif;font-size:.98rem;font-weight:700;}
+.rlane .sub{color:var(--dim);font-size:.78rem;margin-bottom:14px;}
+.rlane .big{font-family:"Space Grotesk",sans-serif;font-size:1.85rem;font-weight:700;
   letter-spacing:-.02em;color:var(--recovered);}
-.lane .biglab{color:var(--dim);font-size:.68rem;text-transform:uppercase;
+.rlane .biglab{color:var(--dim);font-size:.68rem;text-transform:uppercase;
   letter-spacing:.09em;font-weight:600;margin-top:2px;}
 .lrow{display:flex;justify-content:space-between;font-size:.82rem;padding:5px 0;
   border-top:1px solid var(--line);margin-top:11px;color:var(--muted);}
@@ -119,6 +119,15 @@ function freshArms(){
   Object.keys(POST).forEach(k=>{ a[k]={a:1,b:1,pulls:0}; });
   return a;
 }
+/* Default to what the bandit actually learned during evaluation, because
+   that is the thing being shipped. Racing from a flat prior every time
+   measures cold start, which is a different and much harsher question, so
+   it lives behind its own button. */
+function trainedArms(){
+  const a={};
+  Object.keys(POST).forEach(k=>{ a[k]={a:POST[k].a,b:POST[k].b,pulls:POST[k].pulls}; });
+  return a;
+}
 function rcSample(k){ const x=rcArms[k]||{a:1,b:1}; return betaSample(x.a,x.b); }
 function rcUpdate(k,won){
   const x=rcArms[k]||(rcArms[k]={a:1,b:1,pulls:0});
@@ -126,18 +135,27 @@ function rcUpdate(k,won){
   x.pulls++;
 }
 
+/* The compliance gate runs before either policy, exactly as it does in
+   eval_harness.run_policy_on_batch. Letting the opponent retry payments the
+   gate refuses would have it recover money the agent is not permitted to
+   chase, which is not a fair comparison in either direction and would
+   contradict the paired lift the evaluation reports. So both sides face the
+   identical gate, and the only thing being compared is channel choice. */
+function gated(p){ return isHard(p.code)||requiresAFA(p.amount,p.category); }
+
 function runBlind(p,tag){
-  let cost=0,msgs=0,gross=0,illegal=isHard(p.code)?1:0;
+  if(gated(p)) return {cost:0,msgs:0,gross:0,stopped:1};
+  let cost=0,msgs=0,gross=0;
   for(let i=0;i<E.windows.length;i++){
     const w=E.windows[i];
     cost+=E.channelCost['sms']; msgs++;
     if(hashU(tag+'|'+p.id+'|'+w+'|sms')<trueP(p.code,w,'sms')){ gross=p.amount; break; }
   }
-  return {cost:cost,msgs:msgs,gross:gross,illegal:illegal};
+  return {cost:cost,msgs:msgs,gross:gross,stopped:0};
 }
 
 function runAgent(p,tag){
-  if(isHard(p.code)||requiresAFA(p.amount,p.category)) return {cost:0,msgs:0,gross:0,stopped:1};
+  if(gated(p)) return {cost:0,msgs:0,gross:0,stopped:1};
   let cost=0,msgs=0,gross=0;
   for(let i=0;i<E.windows.length;i++){
     const w=E.windows[i];
@@ -193,20 +211,21 @@ function rcVerdict(A,B){
   drawBeliefs();
   const d=(B.net-B.cost)-(A.net-A.cost), el=$('rcVerdict');
   el.classList.toggle('neg',d<0);
-  el.innerHTML = d>=0
+  el.innerHTML = (d>=0
     ? 'The agent finished <b>'+inr(Math.round(d))+'</b> ahead on the same sixty payments, sending '+
-      Math.max(0,A.msgs-B.msgs)+' fewer messages. Blind retry chased <b>'+A.illegal+'</b> mandates that '+
-      'were already dead, which is the part that is not merely wasteful.'
+      Math.max(0,A.msgs-B.msgs)+' fewer messages to do it.'
     : 'Blind retry finished <b>'+inr(Math.round(-d))+'</b> ahead this time. That happens in about 74 of '+
-      'every 200 batches and pretending otherwise would be dishonest. Race it again. Averaged over 200 '+
-      'batches the agent is +₹12,197, with a 95% interval of +6,330 to +18,065.';
+      'every 200 batches, and pretending otherwise would be dishonest. Race it again: averaged over 200 '+
+      'batches the agent is +₹12,197, with a 95% interval of +6,330 to +18,065.')
+    + ' <span style="color:var(--dim)">The gate refused or escalated '+A.stop+' of the 60 before either '+
+      'policy ran, so both sides were arguing over the same '+(60-A.stop)+'.</span>';
 }
 
 function rcRace(resetBeliefs){
   clearInterval(rcTimer);
-  if(resetBeliefs||!rcArms) rcArms=freshArms();
+  if(resetBeliefs) rcArms=freshArms(); else if(!rcArms) rcArms=trainedArms();
   const tag='race'+(raceN++), batch=newBatch(60);
-  const A={net:0,rec:0,msgs:0,cost:0,illegal:0}, B={net:0,rec:0,msgs:0,cost:0,stop:0};
+  const A={net:0,rec:0,msgs:0,cost:0,stop:0}, B={net:0,rec:0,msgs:0,cost:0,stop:0};
   const diffs=[];
   let i=0;
   $('rcVerdict').classList.remove('neg');
@@ -215,24 +234,24 @@ function rcRace(resetBeliefs){
   rcTimer=setInterval(()=>{
     if(i>=batch.length){ clearInterval(rcTimer); rcTimer=null; rcVerdict(A,B); return; }
     const p=batch[i++], a=runBlind(p,tag), b=runAgent(p,tag);
-    A.cost+=a.cost; A.msgs+=a.msgs; A.illegal+=a.illegal; if(a.gross){ A.rec++; A.net+=a.gross; }
+    A.cost+=a.cost; A.msgs+=a.msgs; A.stop+=a.stopped;    if(a.gross){ A.rec++; A.net+=a.gross; }
     B.cost+=b.cost; B.msgs+=b.msgs; B.stop+=b.stopped;    if(b.gross){ B.rec++; B.net+=b.gross; }
     $('aNet').textContent=inr(Math.round(A.net-A.cost)); $('aRec').textContent=A.rec;
     $('aMsg').textContent=A.msgs; $('aCost').textContent=inr(Math.round(A.cost*100)/100);
-    $('aIllegal').textContent=A.illegal;
+    $('aGate').textContent=A.stop;
     $('bNet').textContent=inr(Math.round(B.net-B.cost)); $('bRec').textContent=B.rec;
     $('bMsg').textContent=B.msgs; $('bCost').textContent=inr(Math.round(B.cost*100)/100);
     $('bStop').textContent=B.stop;
     diffs.push((B.net-B.cost)-(A.net-A.cost));
     spark(diffs);
-    $('laneA').classList.toggle('win',(A.net-A.cost)>(B.net-B.cost));
-    $('laneB').classList.toggle('win',(B.net-B.cost)>=(A.net-A.cost));
+    $('laneA').classList.toggle('ahead',(A.net-A.cost)>(B.net-B.cost));
+    $('laneB').classList.toggle('ahead',(B.net-B.cost)>=(A.net-A.cost));
     if(i%6===0) drawBeliefs();
   },95);
 }
 
 $('rcRun').addEventListener('click',()=>rcRace(false));
 $('rcAgain').addEventListener('click',()=>rcRace(true));
-rcArms=freshArms();
+rcArms=trainedArms();
 drawBeliefs();
 """

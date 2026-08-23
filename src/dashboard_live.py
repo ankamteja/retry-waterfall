@@ -380,14 +380,14 @@ LIVE_CSS = r"""
 .stage.ok .sname{color:var(--recovered);}
 
 /* per-window sampling detail */
-.win{margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden;}
-.win table{width:100%;border-collapse:collapse;font-size:.79rem;}
-.win th{text-align:left;color:var(--dim);font-weight:600;font-size:.66rem;text-transform:uppercase;
+.wtable{margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden;}
+.wtable table{width:100%;border-collapse:collapse;font-size:.79rem;}
+.wtable th{text-align:left;color:var(--dim);font-weight:600;font-size:.66rem;text-transform:uppercase;
   letter-spacing:.08em;padding:7px 11px;background:var(--surface-2);}
-.win td{padding:7px 11px;border-top:1px solid var(--line);}
-.win td.r{text-align:right;}
-.win tr.pick td{background:rgba(94,134,199,.09);}
-.win tr.pick td:first-child{box-shadow:inset 2px 0 0 var(--accent);}
+.wtable td{padding:7px 11px;border-top:1px solid var(--line);}
+.wtable td.r{text-align:right;}
+.wtable tr.pick td{background:rgba(94,134,199,.09);}
+.wtable tr.pick td:first-child{box-shadow:inset 2px 0 0 var(--accent);}
 .wlab{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--muted);
   padding:6px 11px;background:var(--surface-2);border-top:1px solid var(--line);}
 .won{color:var(--recovered);font-weight:600;} .lost{color:var(--dim);}
@@ -550,7 +550,7 @@ function windowTable(a){
     foot='Sent by '+E.channelLabel[a.best.channel]+'. True success chance here was '+
          (a.trueP*100).toFixed(1)+'% — '+(a.won?'<span class="won">it cleared</span>':'<span class="lost">it did not clear</span>')+'.';
   }
-  return '<div class="win"><table><tr><th>Channel</th><th class="r">Sampled belief</th>'+
+  return '<div class="wtable"><table><tr><th>Channel</th><th class="r">Sampled belief</th>'+
     '<th class="r">Cost</th><th class="r">Expected net</th><th class="r">Pulls</th></tr>'+rows+
     '</table><div class="wlab">Attempt '+a.attempt+' of '+E.maxAttempts+', window T+'+a.window+'h. '+foot+'</div></div>';
 }
@@ -958,7 +958,7 @@ function showTab(name){
   document.querySelectorAll('.navb').forEach(b=>b.classList.toggle('on',b.dataset.go===name));
   window.scrollTo({top:0,behavior:'instant'});
   /* the traffic simulator keeps running only while you can see it */
-  if(name!=='wire' && typeof stStop==='function' && stTimer) stStop();
+  if(name!=='stream' && typeof stStop==='function' && stTimer) stStop();
 }
 document.querySelectorAll('[data-go]').forEach(b=>
   b.addEventListener('click',()=>showTab(b.dataset.go)));

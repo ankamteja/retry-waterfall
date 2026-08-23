@@ -22,10 +22,10 @@ repo offline; a blank page in either case is unacceptable.
 import json
 import os
 
-from dashboard_race import RACE_CSS, RACE_HTML, RACE_JS
-from dashboard_live import (ENGINE_JS, LIVE_CSS, LIVE_HTML, LIVE_UI_JS, NETWORK_CSS,
-                            NETWORK_HTML, NETWORK_JS, SHELL_CSS, SHELL_HTML, SHELL_JS,
-                            live_constants)
+from dashboard_console import CONSOLE_CSS, CONSOLE_JS, console_body
+from dashboard_race import RACE_CSS, RACE_JS
+from dashboard_live import (ENGINE_JS, LIVE_CSS, LIVE_UI_JS, NETWORK_CSS, NETWORK_JS,
+                            SHELL_JS, live_constants)
 
 SRC_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(SRC_DIR, "..", "data")
@@ -255,153 +255,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 </style>
 </head>
 <body>
-<div class="noise"></div>
-
-<div class="top"><div class="wrap">
-  <div class="brandrow"><div class="mark">R</div>
-    <div class="brand">Retry Waterfall <span>/ recovery control room</span></div></div>
-  <h1>Failed auto-debits, recovered within the rules.</h1>
-  <p class="lede">When a subscription auto-debit fails in India, the money isn't lost yet. But retrying
-    blindly wastes spend, and past a point <b>breaches NPCI mandate rules</b>. This agent decides,
-    per payment, whether a retry is <b>worth it</b>, whether it is <b>permitted</b>, and <b>how to reach
-    the customer</b>, and it logs every decision for audit.</p>
-  <p class="lede"><span class="rule">Retry timing is never the AI's choice.</span> It is fixed by regulation:
-    T+24h, T+72h, T+7d, four attempts maximum. The learned part chooses only the contact channel, and
-    only ever learns which channel recovers money <b>net of what that channel costs</b>.</p>
-
-
-</div></div>
-
-<div class="nav"><div class="navin">
-  <button class="navb on" data-go="start">Start here</button>
-  <button class="navb" data-go="sim">Simulator</button>
-  <button class="navb" data-go="wire">Live</button>
-  <button class="navb" data-go="evidence">Evidence</button>
-  <button class="navb" data-go="how">How it works</button>
-  <span class="navtag"><span class="livedot" id="navDot"></span><span id="navTag">offline</span></span>
-</div></div>
-
-<div class="wrap">
-<!--LIVE_HTML-->
-  <section data-tab="evidence">
-    <div class="shead"><span class="snum">04</span><h2>What one batch of 60 actually did</h2></div>
-    <p class="note">Every number on this tab comes from one run of 60 failed payments through the
-      engine, written to an audit trail and rolled up. The headline percentages further down are
-      averaged over 200 independent runs, because a single batch of 60 is mostly luck.</p>
-  <div class="kpis">
-    <div class="kpi"><div class="l">Revenue at risk</div><div class="v num" id="k-risk">0</div>
-      <div class="s">{st['ingest']['in']} failed payments in batch</div></div>
-    <div class="kpi tealv"><div class="l">Recovered, net of cost</div><div class="v num" id="k-rec">0</div>
-      <div class="s">{st['outcome']['recovered']} payments returned</div></div>
-    <div class="kpi redv"><div class="l">Refused by compliance</div><div class="v num" id="k-ref">0</div>
-      <div class="s">hard declines, never retried</div></div>
-    <div class="kpi amberv"><div class="l">Of expert ceiling</div><div class="v num" id="k-cap">0</div>
-      <div class="s">vs perfect-information oracle</div></div>
-  </div>
-
-  </section>
-
-  <section data-tab="evidence">
-    <div class="shead"><span class="snum">05</span><h2>The retry timeline</h2></div>
-    <p class="note">One lane per payment, running left to right over the seven days the regulation allows.
-      Each marker is one permitted attempt. <b>The amber line is the NPCI wall.</b> Four attempts,
-      then the cycle is closed whether or not the money came back. Filled teal is the attempt that
-      recovered it; a dashed lane never got an attempt at all, because it was refused outright.</p>
-    <div class="card">
-      <div class="tl-head"><div>Payment</div>
-        <div class="tl-axis" id="axis"></div><div style="text-align:right">Outcome</div></div>
-      <div id="lanes"></div>
-      <div class="tl-foot" id="tl-foot"></div>
-    </div>
-  </section>
-
-  <section data-tab="how">
-    <div class="shead"><span class="snum">06</span><h2>Where each payment goes</h2></div>
-    <p class="note">The same batch as a flow. Particles are real volume. The compliance gate is red because
-      it <b>stopped {st['compliance_gate']['refused']} payments a naive retry bot would have illegally retried</b>,
-      and the amber branch is {st['compliance_gate'].get('afa_escalated', 0)} payments over the RBI
-      additional-factor-auth threshold, which cannot be silently auto-debited at all and are routed
-      to an authenticated payment link instead.
-      Drag to rotate, scroll to zoom.</p>
-    <div id="graph"></div>
-    <div class="legend">
-      <span><i style="background:var(--accent)"></i>processing stage</span>
-      <span><i style="background:var(--refused)"></i>stops traffic</span>
-      <span><i style="background:var(--recovered)"></i>recovered</span>
-      <span><i style="background:var(--attention)"></i>learned decision</span>
-    </div>
-  </section>
-
-  <section data-tab="evidence">
-    <div class="shead"><span class="snum">07</span><h2>Does it actually learn?</h2></div>
-    <p class="note">A bandit always beats a naive baseline inside its own simulator, so that on its own proves nothing.
-      So it is also scored against an <b>oracle</b> that knows the true recovery probabilities: the realistic
-      ceiling. The claim is not "we win", it is <b>how much of the achievable gap it closes</b>, averaged over
-      {h['n_seeds']} independent batches so one lucky run can't flatter it.</p>
-    <div class="two">
-      <div class="card pad">
-        <table>
-          <tr><th>Policy</th><th class="r">Recovery</th><th class="r">Net recovered</th><th class="r">Cost/win</th></tr>
-          <tr><td>Baseline, retry all by SMS</td><td class="r">{h['baseline']['rate']*100:.1f}%</td>
-              <td class="r">&#8377;{h['baseline']['net']:,.0f}</td><td class="r">&#8377;{h['baseline']['cpr']:.2f}</td></tr>
-          <tr class="hi"><td>Bandit, this project</td><td class="r">{h['bandit']['rate']*100:.1f}%</td>
-              <td class="r">&#8377;{h['bandit']['net']:,.0f}</td><td class="r">&#8377;{h['bandit']['cpr']:.2f}</td></tr>
-          <tr><td>Oracle, perfect information</td><td class="r">{h['oracle']['rate']*100:.1f}%</td>
-              <td class="r">&#8377;{h['oracle']['net']:,.0f}</td><td class="r">&#8377;{h['oracle']['cpr']:.2f}</td></tr>
-        </table>
-        <p class="note" style="margin:15px 0 0;font-size:.8rem">&plusmn;1 s.d. on net recovered:
-          baseline &#8377;{h['baseline']['net_sd']:,.0f}, bandit &#8377;{h['bandit']['net_sd']:,.0f},
-          oracle &#8377;{h['oracle']['net_sd']:,.0f}. {h['n_events']} events &times; {h['n_seeds']} seeds,
-          common random numbers across policies, reproducible run to run.</p>
-      </div>
-      <div class="card pad">
-        <div style="font-size:.78rem;color:var(--dim);margin-bottom:4px;text-transform:uppercase;
-          letter-spacing:.07em;font-weight:600">Net recovered as evidence accumulates</div>
-        <svg class="curve" id="curve" viewBox="0 0 460 214" preserveAspectRatio="none"></svg>
-        <p class="note" style="margin:6px 0 0;font-size:.8rem">At 50 events it has almost no evidence per
-          channel and trails the baseline. The gap to oracle narrows as attempts accumulate, and
-          that shape <b>is</b> the learning.</p>
-      </div>
-    </div>
-  </section>
-
-  <section data-tab="how">
-    <div class="shead"><span class="snum">08</span><h2>Why it did that, in plain English</h2></div>
-    <p class="note">An LLM turns each audit record into something a finance-ops person can act on. It writes
-      <b>language only</b>. Every number and every decision comes from the audit trail, never from the
-      model. Generated offline by <code>src/explain_exceptions.py</code> and committed, so this page needs no
-      API key and reads identically on any machine.</p>
-    <div class="card pad">
-      <div class="tabs" id="tabs"></div>
-      <div class="exp" id="exp"></div>
-    </div>
-  </section>
-
-  <section data-tab="evidence">
-    <div class="shead"><span class="snum">09</span><h2>Where the money came from</h2></div>
-    <div class="two">
-      <div class="card pad">
-        <div style="font-size:.78rem;color:var(--dim);margin-bottom:11px;text-transform:uppercase;
-          letter-spacing:.07em;font-weight:600">By decline reason</div>
-        <table id="t-code"></table>
-      </div>
-      <div class="card pad">
-        <div style="font-size:.78rem;color:var(--dim);margin-bottom:11px;text-transform:uppercase;
-          letter-spacing:.07em;font-weight:600">By channel, the tradeoff it had to learn</div>
-        <table id="t-chan"></table>
-        <div style="font-size:.78rem;color:var(--dim);margin:20px 0 11px;text-transform:uppercase;
-          letter-spacing:.07em;font-weight:600">By retry window (NPCI schedule)</div>
-        <table id="t-win"></table>
-      </div>
-    </div>
-  </section>
-
-  <footer>
-    NPCI / RBI constants in <code>src/domain_rules.py</code> are sourced regulation, checked 2026-08-22.<br>
-    Simulator probabilities in <code>src/synthetic_data.py</code> are clearly-labelled assumptions.
-    The eval is explicit about which is which.
-  </footer>
-</div>
+{console_body(h, st)}
 
 <script>{vendor('countUp.umd.min.js')}</script>
 <!-- THREE must load first and separately: 3d-force-graph bundles its own copy
@@ -421,7 +275,6 @@ const cu=(id,v,o)=>new countUp.CountUp(id,v,Object.assign({{duration:1.9}},o)).s
 cu('k-risk', D.stats.money.at_risk_inr, {{prefix:'\\u20B9',separator:',',decimalPlaces:0}});
 cu('k-rec',  D.stats.money.net_recovered_inr, {{prefix:'\\u20B9',separator:',',decimalPlaces:0}});
 cu('k-ref',  D.stats.hard_declines.length, {{suffix:' payments'}});
-cu('k-cap',  D.headline.captured, {{decimalPlaces:1,suffix:'%'}});
 
 /* ---- signature: retry timeline ---- */
 (function(){{
@@ -591,6 +444,21 @@ function table(el,head,rows){{
     rows.map(r=>'<tr>'+r.map((c,i)=>`<td class="${{head[i].n?'r':''}}">${{c}}</td>`).join('')+'</tr>').join('');
 }}
 const SOFT=['insufficient_funds','bank_server_timeout','issuer_soft_decline'];
+table('t-policy',[{{t:'Policy'}},{{t:'Recovery',n:1}},{{t:'Net recovered',n:1}},{{t:'Cost per win',n:1}}],
+  [
+    ['Blind retry, always SMS',(D.headline.baseline.rate*100).toFixed(2)+'%',
+      '\u20B9'+Math.round(D.headline.baseline.net).toLocaleString('en-IN'),
+      '\u20B9'+D.headline.baseline.cpr.toFixed(2)],
+    ['This agent',(D.headline.bandit.rate*100).toFixed(2)+'%',
+      '\u20B9'+Math.round(D.headline.bandit.net).toLocaleString('en-IN'),
+      '\u20B9'+D.headline.bandit.cpr.toFixed(2)],
+    ['Oracle, perfect information',(D.headline.oracle.rate*100).toFixed(2)+'%',
+      '\u20B9'+Math.round(D.headline.oracle.net).toLocaleString('en-IN'),
+      '\u20B9'+D.headline.oracle.cpr.toFixed(2)]
+  ]);
+/* the shipped policy is the middle row; the oracle above it is a ceiling, not a rival */
+document.querySelectorAll('#t-policy tr')[2].classList.add('hi');
+
 table('t-code',[{{t:'Decline reason'}},{{t:'Type'}},{{t:'Count',n:1}},{{t:'Recovered',n:1}},{{t:'Gross',n:1}}],
   Object.entries(D.stats.by_decline_code).sort((a,b)=>b[1].total-a[1].total).map(([k,v])=>[
     k.replace(/_/g,' '), SOFT.includes(k)?'<span class="pill soft">soft</span>':'<span class="pill hard">hard</span>',
@@ -613,11 +481,13 @@ table('t-win',[{{t:'Retry window'}},{{t:'Attempts',n:1}},{{t:'Wins',n:1}},{{t:'W
     # Order matters in the script block: the engine defines the helpers, the
     # network layer runs statements at its own top level that use them, and
     # the UI code renders a first decision on load which needs both.
+    # CONSOLE_CSS goes last so the shell wins any selector it shares with the
+    # older section styles, which are kept only for the timeline, the graph,
+    # the tables and the explanation panel.
     html = (html
-            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS + SHELL_CSS + RACE_CSS)
-            .replace("<!--LIVE_HTML-->", SHELL_HTML + LIVE_HTML + RACE_HTML + NETWORK_HTML)
+            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS + RACE_CSS + CONSOLE_CSS)
             .replace("/*LIVE_ENGINE*/", ENGINE_JS.replace("LIVE_CONSTANTS", live_constants(posteriors)))
-            .replace("/*LIVE_NETWORK*/", NETWORK_JS)
+            .replace("/*LIVE_NETWORK*/", CONSOLE_JS + NETWORK_JS)
             .replace("/*LIVE_UI*/", LIVE_UI_JS + RACE_JS + SHELL_JS))
 
     with open(OUT_PATH, "w") as f:
