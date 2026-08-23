@@ -2,6 +2,8 @@
 
 An AI revenue-recovery agent for failed Indian UPI AutoPay and e-mandate subscription debits. Built for the Razorpay AI Buildathon, Track 03.
 
+**New here? Read [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md)** -- the whole system end to end in one document: the regulation, how a payment moves through the pipeline, where the AI is and is not, and how the numbers were arrived at.
+
 ---
 
 ## The problem
@@ -127,6 +129,7 @@ The page detects which mode it is in and says so. Neither mode is required by th
 | `src/server.py` | Optional. Serves the page, proxies a model, ingests real webhooks, streams decisions over SSE. |
 | `src/vendor_fonts.py` | Downloads and inlines fonts for offline operation. |
 | `vendor/` | Vendored JS dependencies (Three.js, 3d-force-graph, countUp). |
+| `docs/WALKTHROUGH.md` | The whole system end to end, in one document. Start here. |
 | `docs/EXPLAINER.md` | Full technical explainer: the problem, the architecture, the eval, the bugs. |
 | `docs/ARCHITECTURE.md` | How the pieces fit and why the seams are where they are. |
 | `docs/razorpay_integration.md` | What was verified against Razorpay's public docs, and what is illustrative. |
