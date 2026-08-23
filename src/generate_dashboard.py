@@ -113,7 +113,7 @@ def main():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Retry Waterfall &mdash; Recovery Control Room</title>
+<title>Retry Waterfall Recovery Control Room</title>
 <style>
 {vendor('fonts.css')}
 
@@ -254,10 +254,10 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   <div class="brandrow"><div class="mark">R</div>
     <div class="brand">Retry Waterfall <span>/ recovery control room</span></div></div>
   <h1>Failed auto-debits, recovered within the rules.</h1>
-  <p class="lede">When a subscription auto-debit fails in India, the money isn't lost &mdash; but retrying
+  <p class="lede">When a subscription auto-debit fails in India, the money isn't lost yet. But retrying
     blindly wastes spend, and past a point <b>breaches NPCI mandate rules</b>. This agent decides,
     per payment, whether a retry is <b>worth it</b>, whether it is <b>permitted</b>, and <b>how to reach
-    the customer</b> &mdash; and logs every decision for audit.</p>
+    the customer</b>, and it logs every decision for audit.</p>
   <p class="lede"><span class="rule">Retry timing is never the AI's choice.</span> It is fixed by regulation:
     T+24h, T+72h, T+7d, four attempts maximum. The learned part chooses only the contact channel, and
     only ever learns which channel recovers money <b>net of what that channel costs</b>.</p>
@@ -279,7 +279,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   <section>
     <div class="shead"><span class="snum">01</span><h2>The retry timeline</h2></div>
     <p class="note">One lane per payment, running left to right over the seven days the regulation allows.
-      Each marker is one permitted attempt. <b>The amber line is the NPCI wall</b> &mdash; four attempts,
+      Each marker is one permitted attempt. <b>The amber line is the NPCI wall.</b> Four attempts,
       then the cycle is closed whether or not the money came back. Filled teal is the attempt that
       recovered it; a dashed lane never got an attempt at all, because it was refused outright.</p>
     <div class="card">
@@ -309,7 +309,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 
   <section>
     <div class="shead"><span class="snum">03</span><h2>Does it actually learn?</h2></div>
-    <p class="note">A bandit always beats a naive baseline inside its own simulator &mdash; that proves nothing.
+    <p class="note">A bandit always beats a naive baseline inside its own simulator, so that on its own proves nothing.
       So it is also scored against an <b>oracle</b> that knows the true recovery probabilities: the realistic
       ceiling. The claim is not "we win", it is <b>how much of the achievable gap it closes</b>, averaged over
       {h['n_seeds']} independent batches so one lucky run can't flatter it.</p>
@@ -317,11 +317,11 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
       <div class="card pad">
         <table>
           <tr><th>Policy</th><th class="r">Recovery</th><th class="r">Net recovered</th><th class="r">Cost/win</th></tr>
-          <tr><td>Baseline &mdash; retry all by SMS</td><td class="r">{h['baseline']['rate']*100:.1f}%</td>
+          <tr><td>Baseline, retry all by SMS</td><td class="r">{h['baseline']['rate']*100:.1f}%</td>
               <td class="r">&#8377;{h['baseline']['net']:,.0f}</td><td class="r">&#8377;{h['baseline']['cpr']:.2f}</td></tr>
-          <tr class="hi"><td>Bandit &mdash; this project</td><td class="r">{h['bandit']['rate']*100:.1f}%</td>
+          <tr class="hi"><td>Bandit, this project</td><td class="r">{h['bandit']['rate']*100:.1f}%</td>
               <td class="r">&#8377;{h['bandit']['net']:,.0f}</td><td class="r">&#8377;{h['bandit']['cpr']:.2f}</td></tr>
-          <tr><td>Oracle &mdash; perfect information</td><td class="r">{h['oracle']['rate']*100:.1f}%</td>
+          <tr><td>Oracle, perfect information</td><td class="r">{h['oracle']['rate']*100:.1f}%</td>
               <td class="r">&#8377;{h['oracle']['net']:,.0f}</td><td class="r">&#8377;{h['oracle']['cpr']:.2f}</td></tr>
         </table>
         <p class="note" style="margin:15px 0 0;font-size:.8rem">&plusmn;1 s.d. on net recovered:
@@ -334,7 +334,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
           letter-spacing:.07em;font-weight:600">Net recovered as evidence accumulates</div>
         <svg class="curve" id="curve" viewBox="0 0 460 214" preserveAspectRatio="none"></svg>
         <p class="note" style="margin:6px 0 0;font-size:.8rem">At 50 events it has almost no evidence per
-          channel and trails the baseline. The gap to oracle narrows as attempts accumulate &mdash;
+          channel and trails the baseline. The gap to oracle narrows as attempts accumulate, and
           that shape <b>is</b> the learning.</p>
       </div>
     </div>
@@ -343,7 +343,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   <section>
     <div class="shead"><span class="snum">04</span><h2>Why it did that, in plain English</h2></div>
     <p class="note">An LLM turns each audit record into something a finance-ops person can act on. It writes
-      <b>language only</b> &mdash; every number and every decision comes from the audit trail, never from the
+      <b>language only</b>. Every number and every decision comes from the audit trail, never from the
       model. Generated offline by <code>src/explain_exceptions.py</code> and committed, so this page needs no
       API key and reads identically on any machine.</p>
     <div class="card pad">
@@ -362,7 +362,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
       </div>
       <div class="card pad">
         <div style="font-size:.78rem;color:var(--dim);margin-bottom:11px;text-transform:uppercase;
-          letter-spacing:.07em;font-weight:600">By channel &mdash; the tradeoff it had to learn</div>
+          letter-spacing:.07em;font-weight:600">By channel, the tradeoff it had to learn</div>
         <table id="t-chan"></table>
         <div style="font-size:.78rem;color:var(--dim);margin:20px 0 11px;text-transform:uppercase;
           letter-spacing:.07em;font-weight:600">By retry window (NPCI schedule)</div>
