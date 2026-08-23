@@ -211,12 +211,22 @@ function rcVerdict(A,B){
   drawBeliefs();
   const d=(B.net-B.cost)-(A.net-A.cost), el=$('rcVerdict');
   el.classList.toggle('neg',d<0);
+  /* Every figure below comes from D.headline.paired, which is computed from
+     the same 200 seeds the masthead reports. A single batch swings far wider
+     than the mean, so both branches have to say so: a lucky race printing
+     several times the headline lift is as misleading as a lost one, and a
+     reader comparing one race against the masthead deserves the answer
+     without having to ask for it. */
+  const P=D.headline.paired;
+  const mean='+'+inr(Math.round(P.lift))+', with a 95% interval of +'+
+    inr(Math.round(P.ci_lo))+' to +'+inr(Math.round(P.ci_hi));
   el.innerHTML = (d>=0
     ? 'The agent finished <b>'+inr(Math.round(d))+'</b> ahead on the same sixty payments, sending '+
-      Math.max(0,A.msgs-B.msgs)+' fewer messages to do it.'
-    : 'Blind retry finished <b>'+inr(Math.round(-d))+'</b> ahead this time. That happens in about 74 of '+
-      'every 200 batches, and pretending otherwise would be dishonest. Race it again: averaged over 200 '+
-      'batches the agent is +₹12,197, with a 95% interval of +6,330 to +18,065.')
+      Math.max(0,A.msgs-B.msgs)+' fewer messages to do it. One batch is noisy either way, and this one '+
+      'is a single draw: over '+P.n+' batches the agent averages '+mean+', and loses '+P.losses+' of them.'
+    : 'Blind retry finished <b>'+inr(Math.round(-d))+'</b> ahead this time. That happens in about '+
+      P.losses+' of every '+P.n+' batches, and pretending otherwise would be dishonest. Race it again: '+
+      'averaged over '+P.n+' batches the agent is '+mean+'.')
     + ' <span style="color:var(--dim)">The gate refused or escalated '+A.stop+' of the 60 before either '+
       'policy ran, so both sides were arguing over the same '+(60-A.stop)+'.</span>';
 }

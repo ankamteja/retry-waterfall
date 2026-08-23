@@ -234,7 +234,7 @@ def console_body(h, st):
       <div class="mstat"><span class="k">of expert ceiling</span>
         <span class="v num" style="color:var(--attention)">{h['captured']:.1f}%</span></div>
       <div class="mstat"><span class="k">paired lift / batch</span>
-        <span class="v num" style="color:var(--recovered)">+&#8377;12,197</span></div>
+        <span class="v num" style="color:var(--recovered)">+&#8377;{h['paired']['lift']:,.0f}</span></div>
       <button class="qbtn" id="qOpen" title="What this is">?</button>
       <span class="sdot" id="navDot"></span><span class="livetext" id="navTag">offline</span>
     </div>

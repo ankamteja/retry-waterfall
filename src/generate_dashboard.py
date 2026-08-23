@@ -59,6 +59,26 @@ def headline(seed_results):
     agg["captured"] = (agg["bandit"]["net"] - agg["baseline"]["net"]) / lift * 100 if lift else 0
     agg["n_seeds"] = len(seed_results)
     agg["n_events"] = seed_results[0]["bandit"]["n_events"]
+
+    # The paired lift, its interval and the win count were written by hand into
+    # the masthead and the race copy. They were correct, but a hand-copied
+    # number is exactly how 63.0% survived four places after the figure moved.
+    # Outcomes are coupled per seed by the common random numbers, so the
+    # per-seed differences are genuinely paired and their standard error is the
+    # right uncertainty on the lift.
+    diffs = [r["bandit"]["net_recovered_inr"] - r["baseline"]["net_recovered_inr"]
+             for r in seed_results]
+    n = len(diffs)
+    mean_diff = statistics.mean(diffs)
+    se = statistics.stdev(diffs) / (n ** 0.5) if n > 1 else 0.0
+    agg["paired"] = {
+        "lift": mean_diff,
+        "ci_lo": mean_diff - 1.96 * se,
+        "ci_hi": mean_diff + 1.96 * se,
+        "wins": sum(1 for d in diffs if d > 0),
+        "losses": sum(1 for d in diffs if d < 0),
+        "n": n,
+    }
     return agg
 
 
