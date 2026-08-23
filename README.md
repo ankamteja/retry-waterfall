@@ -130,6 +130,8 @@ The page detects which mode it is in and says so. Neither mode is required by th
 | `src/vendor_fonts.py` | Downloads and inlines fonts for offline operation. |
 | `vendor/` | Vendored JS dependencies (Three.js, 3d-force-graph, countUp). |
 | `docs/WALKTHROUGH.md` | The whole system end to end, in one document. Start here. |
+| `docs/CONSOLE.md` | The operator console: what each pane shows and how to drive the demo. |
+| `docs/REFERENCE.md` | Data formats, the HTTP surface, and the decline taxonomy. |
 | `docs/EXPLAINER.md` | Full technical explainer: the problem, the architecture, the eval, the bugs. |
 | `docs/ARCHITECTURE.md` | How the pieces fit and why the seams are where they are. |
 | `docs/razorpay_integration.md` | What was verified against Razorpay's public docs, and what is illustrative. |
