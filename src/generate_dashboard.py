@@ -293,7 +293,10 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   <section>
     <div class="shead"><span class="snum">02</span><h2>Where each payment goes</h2></div>
     <p class="note">The same batch as a flow. Particles are real volume. The compliance gate is red because
-      it <b>stopped {st['compliance_gate']['refused']} payments a naive retry bot would have illegally retried</b>.
+      it <b>stopped {st['compliance_gate']['refused']} payments a naive retry bot would have illegally retried</b>,
+      and the amber branch is {st['compliance_gate'].get('afa_escalated', 0)} payments over the RBI
+      additional-factor-auth threshold, which cannot be silently auto-debited at all and are routed
+      to an authenticated payment link instead.
       Drag to rotate, scroll to zoom.</p>
     <div id="graph"></div>
     <div class="legend">
@@ -431,6 +434,7 @@ cu('k-cap',  D.headline.captured, {{decimalPlaces:1,suffix:'%'}});
     {{id:'classify',t:'Classify',         d:s.classify.soft+' soft / '+s.classify.hard+' hard',    color:C.accent, val:11, fx:-125, fy:0}},
     {{id:'gate',    t:'Compliance gate',  d:s.compliance_gate.refused+' refused outright',         color:C.red,    val:14, fx:0,    fy:0}},
     {{id:'policy',  t:'Channel policy',   d:s.policy.attempts+' attempts made',                    color:C.amber,  val:13, fx:128,  fy:0}},
+    {{id:'afa',     t:'AFA escalation',   d:(s.compliance_gate.afa_escalated||0)+' need customer auth', color:C.amber, val:11, fx:0, fy:-92}},
     {{id:'won',     t:'Recovered',        d:s.outcome.recovered+' payments',                       color:C.teal,   val:15, fx:250,  fy:-56}},
     {{id:'lost',    t:'Exhausted',        d:s.outcome.exhausted+' payments',                       color:C.slate,  val:10, fx:250,  fy:62}},
   ];
@@ -438,6 +442,7 @@ cu('k-cap',  D.headline.captured, {{decimalPlaces:1,suffix:'%'}});
   const links=[
     {{source:'ingest',target:'classify',v:s.ingest['in']}},
     {{source:'classify',target:'gate',v:s.classify['in']}},
+    {{source:'gate',target:'afa',v:s.compliance_gate.afa_escalated||0}},
     {{source:'gate',target:'policy',v:s.compliance_gate.passed}},
     {{source:'policy',target:'won',v:s.outcome.recovered}},
     {{source:'policy',target:'lost',v:s.outcome.exhausted}},
@@ -468,12 +473,13 @@ cu('k-cap',  D.headline.captured, {{decimalPlaces:1,suffix:'%'}});
   const G=ForceGraph3D()(el)
     .backgroundColor('#141B2A').graphData({{nodes,links}})
     .nodeThreeObject(labelSprite)
-    .linkColor(l=>l.target.id==='lost'?C.slate:C.accent)
+    .linkColor(l=>l.target.id==='lost'?C.slate:l.target.id==='afa'?C.amber:C.accent)
     .linkWidth(l=>Math.max(.5,Math.log(l.v+1)*.62)).linkOpacity(.34)
     .linkDirectionalParticles(l=>Math.max(2,Math.round(Math.log(l.v+1)*2)))
     .linkDirectionalParticleSpeed(.005).linkDirectionalParticleWidth(2.3)
     .linkDirectionalParticleColor(l=>l.target.id==='won'?C.teal:
-                                     l.target.id==='lost'?C.slate:C.accent)
+                                     l.target.id==='lost'?C.slate:
+                                     l.target.id==='afa'?C.amber:C.accent)
     .showNavInfo(false).enableNodeDrag(false);
   // Explicit camera distance, not zoomToFit: the label sprites inflate each
   // node's bounding box, so zoomToFit pulls back until the pipeline is a

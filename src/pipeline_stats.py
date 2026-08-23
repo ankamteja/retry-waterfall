@@ -38,7 +38,9 @@ def build(policy: str = "bandit", seed: int = 0) -> dict:
     recovered_ids = {r["payment_id"] for r in records if r["recovered"]}
     skipped = [r for r in records if r["channel"] is None and r["stopping_rule"] != "hard_decline_no_retry"]
 
-    soft_ids = payments - hard_ids
+    afa_ids = {r["payment_id"] for r in records
+               if r["stopping_rule"] == "afa_required_escalate_to_auth_link"}
+    soft_ids = payments - hard_ids - afa_ids
     exhausted_ids = soft_ids - recovered_ids
 
     by_code = defaultdict(lambda: {"total": 0, "recovered": 0, "gross_inr": 0.0})
@@ -75,8 +77,10 @@ def build(policy: str = "bandit", seed: int = 0) -> dict:
     return {
         "stages": {
             "ingest": {"in": len(payments), "out": len(payments), "rejected": 0},
-            "classify": {"in": len(payments), "soft": len(soft_ids), "hard": len(hard_ids)},
-            "compliance_gate": {"in": len(payments), "passed": len(soft_ids), "refused": len(hard_ids)},
+            "classify": {"in": len(payments), "soft": len(soft_ids) + len(afa_ids),
+                         "hard": len(hard_ids)},
+            "compliance_gate": {"in": len(payments), "passed": len(soft_ids),
+                                "refused": len(hard_ids), "afa_escalated": len(afa_ids)},
             "policy": {"in": len(soft_ids), "attempts": len(attempted), "skipped": len(skipped)},
             "outcome": {"recovered": len(recovered_ids), "exhausted": len(exhausted_ids)},
         },

@@ -376,11 +376,20 @@ more convincing than any single number.
 
 | Policy | Recovery | Net recovered | Cost per win |
 |---|---|---|---|
-| Baseline (retry all by SMS) | 40.9% | ₹306,132 | ₹0.56 |
-| **Bandit (this project)** | **43.1%** | **₹325,869** | ₹14.76 |
-| Oracle (perfect information) | 45.0% | ₹337,474 | ₹26.10 |
+| Baseline (retry all by SMS) | 37.16% | ₹261,660 | ₹0.55 |
+| **Bandit (this project)** | **39.11%** | **₹273,858** | ₹14.63 |
+| Oracle (perfect information) | 40.78% | ₹285,540 | ₹25.47 |
 
-60 events × 200 seeds. **Bandit captures 63.0% of achievable lift.**
+60 events × 200 seeds. **Bandit captures 51.1% of achievable lift.**
+
+Paired lift over baseline: **+₹12,197 per batch** (95% CI +6,330 to
++18,065). The bandit beat the baseline in **126 of 200 batches (63%)** —
+not always, and saying so is the point.
+
+> These numbers are lower than an earlier version of this document because
+> the RBI AFA gate (Part 4.2) now correctly removes high-value payments
+> from the auto-retry path entirely. Recovering less money *legally* is
+> the right answer.
 
 Note the bandit spends *less per win* than the oracle — it's more
 conservative about expensive IVR calls than a perfect-knowledge policy
