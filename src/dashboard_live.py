@@ -439,7 +439,7 @@ LIVE_CSS = r"""
 
 
 LIVE_HTML = r"""
-  <section id="live">
+  <section id="live" data-tab="sim">
     <div class="shead"><span class="snum">01</span><h2>Drive it yourself</h2></div>
     <p class="note">This is not a recording. The compliance gate, the Thompson Sampling step and the
       outbound call below all execute <b>in this page, right now</b>, from the posteriors the bandit
@@ -473,7 +473,7 @@ LIVE_HTML = r"""
     </div>
   </section>
 
-  <section id="stream">
+  <section id="stream" data-tab="wire">
     <div class="shead"><span class="snum">02</span><h2>Live traffic</h2></div>
     <p class="note">Press play and the page generates failed payments that did not exist a moment ago,
       then streams them through the same engine one at a time. Nothing here was precomputed. Hit
@@ -483,7 +483,10 @@ LIVE_HTML = r"""
       <button class="btn" id="stPlay">Play</button>
       <button class="btn ghost" id="stNew">New batch</button>
       <div class="speed"><span class="livedot" id="stDot"></span><span id="stState">idle</span></div>
-      <div class="speed"><span>Speed</span><input type="range" id="stSpeed" min="1" max="40" value="14"></div>
+      <div class="speed"><span>Speed</span>
+        <button class="btn ghost spd" data-hz="2">Slow</button>
+        <button class="btn ghost spd on" data-hz="6">Normal</button>
+        <button class="btn ghost spd" data-hz="20">Fast</button></div>
     </div>
     <div class="counters">
       <div><div class="l">Processed</div><div class="v num" id="cProc">0</div></div>
@@ -628,8 +631,12 @@ $('lvMany').addEventListener('click',()=>{
 });
 
 syncAmount();
-HEALTH.then(()=>render(runPayment(
-  {id:'pay_live_demo',amount:4200,category:'subscription',code:'insufficient_funds'})));
+/* Deliberately no decision on load. A page that starts computing and
+   narrating before anyone asks it to reads as noise, and the first thing a
+   visitor sees should be an instruction, not output. */
+$('lvOut').innerHTML='<div style="color:var(--dim);font-size:.9rem;padding:20px 4px">'+
+  'Set a reason, a category and an amount on the left, then press <b style="color:var(--text)">Run this '+
+  'payment</b>. The engine decides here in the page and shows every step it took.</div>';
 
 /* ---- live traffic ---- */
 let stBatch=[], stIdx=0, stTimer=null;
@@ -666,17 +673,24 @@ function stStop(){
   clearInterval(stTimer); stTimer=null;
   $('stPlay').textContent='Play'; $('stDot').classList.remove('on'); $('stState').textContent='paused';
 }
+/* Buttons rather than a range input: a slider sitting in a scrollable page
+   swallows the wheel, so scrolling past it silently changed the speed. */
+let stHz=6;
 function stStart(){
-  const hz=+$('stSpeed').value;
   clearInterval(stTimer);
-  stTimer=setInterval(stStep, 1000/hz);
+  stTimer=setInterval(stStep, 1000/stHz);
   $('stPlay').textContent='Pause'; $('stDot').classList.add('on');
-  $('stState').textContent='running '+hz+'/s';
+  $('stState').textContent='running '+stHz+'/s';
 }
 $('stPlay').addEventListener('click',()=>stTimer?stStop():stStart());
 $('stNew').addEventListener('click',()=>{ stReset(); if(stTimer) stStart(); });
-$('stSpeed').addEventListener('input',()=>{ if(stTimer) stStart(); });
+document.querySelectorAll('.spd').forEach(b=>b.addEventListener('click',()=>{
+  stHz=+b.dataset.hz;
+  document.querySelectorAll('.spd').forEach(o=>o.classList.toggle('on',o===b));
+  if(stTimer) stStart();
+}));
 stReset();
+stStop();   /* idle until asked */
 """
 
 
@@ -693,7 +707,7 @@ stReset();
 # --------------------------------------------------------------------------
 
 NETWORK_HTML = r"""
-  <section id="wire">
+  <section id="wire" data-tab="wire">
     <div class="shead"><span class="snum">03</span><h2>Real webhooks, live</h2></div>
     <p class="note">The two sections above run inside this page. This one does not. Post a genuine
       Razorpay <span class="mono">subscription.pending</span> body to the server and it goes through
@@ -755,11 +769,14 @@ const HEALTH = fetch('/health').then(r=>r.json()).then(h=>{
   LIVE=!!h.live; LIVE_MODEL=h.model||'';
   wireState('connected, streaming',true);
   $('wModel').textContent='model: '+LIVE_MODEL;
+  $('navTag').textContent='live · '+LIVE_MODEL;
+  $('navDot').classList.add('on');
   subscribeEvents();
 }).catch(()=>{
   LIVE=false;
   wireState('no server: page opened directly, in-browser engine only',false);
   $('wModel').textContent='explanations: pre-generated';
+  $('navTag').textContent='offline · in-browser engine';
   $('wSend').disabled=true; $('wSend').style.opacity=.45;
 });
 
@@ -831,4 +848,118 @@ function llmBlock(trace){
   }
   return box;
 }
+"""
+
+
+# --------------------------------------------------------------------------
+# The shell: a first screen that teaches the problem, and four tabs.
+#
+# The page was one continuous scroll of eight sections that opened with
+# results. Someone who does not already know what dunning is could not tell
+# what they were looking at, which was the first and most persistent piece
+# of feedback on it. Length was making that worse, not better.
+#
+# So: nothing moves on the first screen, it states the problem in one
+# sentence and the constraint that makes the problem hard, and every other
+# section moves behind a tab. A judge skims once, and the thing they skim
+# first is now an explanation rather than a number.
+# --------------------------------------------------------------------------
+
+SHELL_CSS = r"""
+.nav{position:sticky;top:0;z-index:50;background:rgba(10,14,26,.9);
+  backdrop-filter:blur(11px);border-bottom:1px solid var(--line);}
+.navin{max-width:1200px;margin:0 auto;padding:0 26px;display:flex;gap:4px;align-items:center;}
+.navb{background:none;border:0;color:var(--dim);font-family:"Space Grotesk",sans-serif;
+  font-weight:600;font-size:.86rem;padding:15px 15px 13px;cursor:pointer;
+  border-bottom:2px solid transparent;letter-spacing:-.01em;}
+.navb:hover{color:var(--text);}
+.navb.on{color:var(--text);border-bottom-color:var(--accent);}
+.navtag{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:.66rem;
+  color:var(--dim);letter-spacing:.09em;text-transform:uppercase;
+  display:flex;align-items:center;gap:7px;}
+[data-tab]{display:none;}
+[data-tab].show{display:block;}
+
+/* ---- first screen ---- */
+.hero{padding:34px 0 4px;}
+.hero .eye{font-family:"JetBrains Mono",monospace;font-size:.7rem;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--accent);margin-bottom:15px;}
+.hero h2{font-size:clamp(1.4rem,2.6vw,1.95rem);max-width:24ch;line-height:1.2;margin-bottom:18px;}
+.hero p{color:var(--muted);max-width:66ch;margin:0 0 14px;font-size:.97rem;}
+.hero p b{color:var(--text);font-weight:600;}
+.rulecard{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:26px 0 8px;}
+@media(max-width:820px){.rulecard{grid-template-columns:1fr;}}
+.rulecard>div{background:var(--surface);padding:19px 21px;}
+.rulecard .n{font-family:"Space Grotesk",sans-serif;font-size:1.5rem;font-weight:700;
+  color:var(--attention);letter-spacing:-.02em;}
+.rulecard .h{font-size:.9rem;font-weight:600;margin:7px 0 5px;}
+.rulecard .d{color:var(--dim);font-size:.83rem;line-height:1.55;}
+.steps{counter-reset:s;margin:30px 0 0;padding:0;list-style:none;}
+.steps li{position:relative;padding:0 0 17px 40px;color:var(--muted);font-size:.92rem;}
+.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:-1px;
+  width:25px;height:25px;border-radius:7px;background:var(--surface-2);
+  border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center;
+  font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--accent);}
+.steps li b{color:var(--text);font-weight:600;}
+.cta{display:flex;gap:11px;flex-wrap:wrap;margin-top:26px;}
+.cta .btn{width:auto;padding:12px 22px;}
+"""
+
+SHELL_HTML = r"""
+  <section data-tab="start" class="show">
+    <div class="hero">
+      <div class="eye">Start here</div>
+      <h2>A subscription payment failed. You get four tries, and the clock is not yours.</h2>
+      <p>In India a recurring payment is not a charge you make. The customer signs a <b>mandate</b> once,
+        and after that you ask the payment rails to execute it. Sometimes that execution fails: no money in
+        the account that morning, the bank did not answer, the card expired. The customer still wants the
+        service. The revenue was lost to plumbing, not to a decision.</p>
+      <p>Recovering it is nearly pure margin, which is why everyone tries. What makes India different is
+        that <b>you are not allowed to just keep retrying.</b></p>
+      <div class="rulecard">
+        <div><div class="n">4</div><div class="h">Attempts per cycle, total</div>
+          <div class="d">NPCI caps UPI AutoPay at one original execution plus three retries.
+            A fifth attempt is not aggressive dunning, it is non compliant.</div></div>
+        <div><div class="n">T+24h · 72h · 7d</div><div class="h">Fixed retry windows</div>
+          <div class="d">When the retries happen is set by regulation. No system, learned or otherwise,
+            gets to choose that. This is the constraint the whole project is built around.</div></div>
+        <div><div class="n">₹15,000</div><div class="h">Where authentication kicks in</div>
+          <div class="d">Above it, RBI requires the customer to re-authenticate, so a silent background
+            retry cannot legally clear. The limit rises to ₹1,00,000 for mutual funds, insurance and
+            credit card bills.</div></div>
+      </div>
+      <p style="margin-top:26px">So the interesting question is not <i>when do we retry</i>, because that is
+        answered for you. It is <b>which of these payments should be touched at all</b>, and
+        <b>how do you reach the customer</b> before an attempt you are only allowed to make four times.
+        That is the only thing here that is learned.</p>
+      <ol class="steps">
+        <li><b>Classify.</b> Split the failure into soft, which can recover, and hard, where the mandate
+          or the instrument is dead.</li>
+        <li><b>Refuse what the rules forbid.</b> Hard declines never reach the policy. Payments over the
+          authentication limit are escalated instead of silently retried.</li>
+        <li><b>Choose a channel.</b> For each permitted window a contextual bandit picks SMS or an IVR
+          call, or skips when the expected recovery does not cover the cost of the message.</li>
+        <li><b>Fire the outbound call, and log it.</b> Every decision is written to an append only trail,
+          so the four attempt cap is provable rather than assumed.</li>
+      </ol>
+      <div class="cta">
+        <button class="btn" data-go="sim">Run one payment through it</button>
+        <button class="btn ghost" data-go="evidence">Show me whether it works</button>
+      </div>
+    </div>
+  </section>
+"""
+
+SHELL_JS = r"""
+/* ---- tabs ---- */
+function showTab(name){
+  document.querySelectorAll('[data-tab]').forEach(s=>s.classList.toggle('show',s.dataset.tab===name));
+  document.querySelectorAll('.navb').forEach(b=>b.classList.toggle('on',b.dataset.go===name));
+  window.scrollTo({top:0,behavior:'instant'});
+  /* the traffic simulator keeps running only while you can see it */
+  if(name!=='wire' && typeof stStop==='function' && stTimer) stStop();
+}
+document.querySelectorAll('[data-go]').forEach(b=>
+  b.addEventListener('click',()=>showTab(b.dataset.go)));
 """

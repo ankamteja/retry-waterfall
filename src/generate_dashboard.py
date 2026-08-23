@@ -23,7 +23,8 @@ import json
 import os
 
 from dashboard_live import (ENGINE_JS, LIVE_CSS, LIVE_HTML, LIVE_UI_JS, NETWORK_CSS,
-                            NETWORK_HTML, NETWORK_JS, live_constants)
+                            NETWORK_HTML, NETWORK_JS, SHELL_CSS, SHELL_HTML, SHELL_JS,
+                            live_constants)
 
 SRC_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(SRC_DIR, "..", "data")
@@ -267,6 +268,25 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
     T+24h, T+72h, T+7d, four attempts maximum. The learned part chooses only the contact channel, and
     only ever learns which channel recovers money <b>net of what that channel costs</b>.</p>
 
+
+</div></div>
+
+<div class="nav"><div class="navin">
+  <button class="navb on" data-go="start">Start here</button>
+  <button class="navb" data-go="sim">Simulator</button>
+  <button class="navb" data-go="wire">Live</button>
+  <button class="navb" data-go="evidence">Evidence</button>
+  <button class="navb" data-go="how">How it works</button>
+  <span class="navtag"><span class="livedot" id="navDot"></span><span id="navTag">offline</span></span>
+</div></div>
+
+<div class="wrap">
+<!--LIVE_HTML-->
+  <section data-tab="evidence">
+    <div class="shead"><span class="snum">04</span><h2>What one batch of 60 actually did</h2></div>
+    <p class="note">Every number on this tab comes from one run of 60 failed payments through the
+      engine, written to an audit trail and rolled up. The headline percentages further down are
+      averaged over 200 independent runs, because a single batch of 60 is mostly luck.</p>
   <div class="kpis">
     <div class="kpi"><div class="l">Revenue at risk</div><div class="v num" id="k-risk">0</div>
       <div class="s">{st['ingest']['in']} failed payments in batch</div></div>
@@ -277,12 +297,11 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
     <div class="kpi amberv"><div class="l">Of expert ceiling</div><div class="v num" id="k-cap">0</div>
       <div class="s">vs perfect-information oracle</div></div>
   </div>
-</div></div>
 
-<div class="wrap">
-<!--LIVE_HTML-->
-  <section>
-    <div class="shead"><span class="snum">04</span><h2>The retry timeline</h2></div>
+  </section>
+
+  <section data-tab="evidence">
+    <div class="shead"><span class="snum">05</span><h2>The retry timeline</h2></div>
     <p class="note">One lane per payment, running left to right over the seven days the regulation allows.
       Each marker is one permitted attempt. <b>The amber line is the NPCI wall.</b> Four attempts,
       then the cycle is closed whether or not the money came back. Filled teal is the attempt that
@@ -295,8 +314,8 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
     </div>
   </section>
 
-  <section>
-    <div class="shead"><span class="snum">05</span><h2>Where each payment goes</h2></div>
+  <section data-tab="how">
+    <div class="shead"><span class="snum">06</span><h2>Where each payment goes</h2></div>
     <p class="note">The same batch as a flow. Particles are real volume. The compliance gate is red because
       it <b>stopped {st['compliance_gate']['refused']} payments a naive retry bot would have illegally retried</b>,
       and the amber branch is {st['compliance_gate'].get('afa_escalated', 0)} payments over the RBI
@@ -312,8 +331,8 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
     </div>
   </section>
 
-  <section>
-    <div class="shead"><span class="snum">06</span><h2>Does it actually learn?</h2></div>
+  <section data-tab="evidence">
+    <div class="shead"><span class="snum">07</span><h2>Does it actually learn?</h2></div>
     <p class="note">A bandit always beats a naive baseline inside its own simulator, so that on its own proves nothing.
       So it is also scored against an <b>oracle</b> that knows the true recovery probabilities: the realistic
       ceiling. The claim is not "we win", it is <b>how much of the achievable gap it closes</b>, averaged over
@@ -345,8 +364,8 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
     </div>
   </section>
 
-  <section>
-    <div class="shead"><span class="snum">07</span><h2>Why it did that, in plain English</h2></div>
+  <section data-tab="how">
+    <div class="shead"><span class="snum">08</span><h2>Why it did that, in plain English</h2></div>
     <p class="note">An LLM turns each audit record into something a finance-ops person can act on. It writes
       <b>language only</b>. Every number and every decision comes from the audit trail, never from the
       model. Generated offline by <code>src/explain_exceptions.py</code> and committed, so this page needs no
@@ -357,8 +376,8 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
     </div>
   </section>
 
-  <section>
-    <div class="shead"><span class="snum">08</span><h2>Where the money came from</h2></div>
+  <section data-tab="evidence">
+    <div class="shead"><span class="snum">09</span><h2>Where the money came from</h2></div>
     <div class="two">
       <div class="card pad">
         <div style="font-size:.78rem;color:var(--dim);margin-bottom:11px;text-transform:uppercase;
@@ -594,11 +613,11 @@ table('t-win',[{{t:'Retry window'}},{{t:'Attempts',n:1}},{{t:'Wins',n:1}},{{t:'W
     # network layer runs statements at its own top level that use them, and
     # the UI code renders a first decision on load which needs both.
     html = (html
-            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS)
-            .replace("<!--LIVE_HTML-->", LIVE_HTML + NETWORK_HTML)
+            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS + SHELL_CSS)
+            .replace("<!--LIVE_HTML-->", SHELL_HTML + LIVE_HTML + NETWORK_HTML)
             .replace("/*LIVE_ENGINE*/", ENGINE_JS.replace("LIVE_CONSTANTS", live_constants(posteriors)))
             .replace("/*LIVE_NETWORK*/", NETWORK_JS)
-            .replace("/*LIVE_UI*/", LIVE_UI_JS))
+            .replace("/*LIVE_UI*/", LIVE_UI_JS + SHELL_JS))
 
     with open(OUT_PATH, "w") as f:
         f.write(html)
