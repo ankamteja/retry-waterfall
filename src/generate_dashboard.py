@@ -22,6 +22,7 @@ repo offline; a blank page in either case is unacceptable.
 import json
 import os
 
+from dashboard_race import RACE_CSS, RACE_HTML, RACE_JS
 from dashboard_live import (ENGINE_JS, LIVE_CSS, LIVE_HTML, LIVE_UI_JS, NETWORK_CSS,
                             NETWORK_HTML, NETWORK_JS, SHELL_CSS, SHELL_HTML, SHELL_JS,
                             live_constants)
@@ -613,11 +614,11 @@ table('t-win',[{{t:'Retry window'}},{{t:'Attempts',n:1}},{{t:'Wins',n:1}},{{t:'W
     # network layer runs statements at its own top level that use them, and
     # the UI code renders a first decision on load which needs both.
     html = (html
-            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS + SHELL_CSS)
-            .replace("<!--LIVE_HTML-->", SHELL_HTML + LIVE_HTML + NETWORK_HTML)
+            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS + SHELL_CSS + RACE_CSS)
+            .replace("<!--LIVE_HTML-->", SHELL_HTML + LIVE_HTML + RACE_HTML + NETWORK_HTML)
             .replace("/*LIVE_ENGINE*/", ENGINE_JS.replace("LIVE_CONSTANTS", live_constants(posteriors)))
             .replace("/*LIVE_NETWORK*/", NETWORK_JS)
-            .replace("/*LIVE_UI*/", LIVE_UI_JS + SHELL_JS))
+            .replace("/*LIVE_UI*/", LIVE_UI_JS + RACE_JS + SHELL_JS))
 
     with open(OUT_PATH, "w") as f:
         f.write(html)
