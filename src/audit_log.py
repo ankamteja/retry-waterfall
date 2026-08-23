@@ -24,9 +24,14 @@ class AuditRecord:
 
 
 class AuditLog:
-    def __init__(self, path: str):
+    def __init__(self, path: str, append: bool = False):
+        """append=False by default: these files are regenerated build
+        artifacts, and appending across runs silently stacks multiple runs
+        into one trail (which once produced an impossible "12 permitted
+        retries" against a 4-attempt regulatory cap). Real deployments
+        would pass append=True and rotate."""
         self._path = path
-        self._file = open(path, "a", encoding="utf-8")
+        self._file = open(path, "a" if append else "w", encoding="utf-8")
 
     def write(self, record: AuditRecord) -> None:
         self._file.write(json.dumps(asdict(record)) + "\n")

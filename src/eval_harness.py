@@ -27,7 +27,12 @@ from synthetic_data import generate_batch, recovery_probability
 from policies import BaselinePolicy, BanditPolicy, OraclePolicy, CHANNEL_COST_INR
 from audit_log import AuditLog, AuditRecord
 
-N_SEEDS = 25
+# Fixed per-policy RNG offsets. Must NOT be hash(policy.name): Python
+# randomizes string hashes per process, which made the headline number
+# swing between runs (62.7% -> 19.8% on identical code).
+POLICY_RNG_OFFSET = {"baseline": 11, "bandit": 3391, "oracle": 7717}
+
+N_SEEDS = 200
 HEADLINE_N = 60
 LEARNING_CURVE_N = 800
 LEARNING_CURVE_CHECKPOINTS = [50, 100, 200, 400, 800]
@@ -120,7 +125,7 @@ def run_one_seed(n: int, seed: int, audit_dir: str | None = None) -> dict:
         if audit_dir:
             os.makedirs(audit_dir, exist_ok=True)
             audit_log = AuditLog(os.path.join(audit_dir, f"audit_{policy.name}_seed{seed}.jsonl"))
-        rng = random.Random(seed * 7919 + hash(policy.name) % 10_000)
+        rng = random.Random(seed * 7919 + POLICY_RNG_OFFSET[policy.name])
         try:
             results[policy.name] = run_policy_on_batch(policy, events, rng, audit_log)
         finally:
@@ -130,10 +135,13 @@ def run_one_seed(n: int, seed: int, audit_dir: str | None = None) -> dict:
 
 
 def summarize(all_seed_results: list[dict], policy_name: str, field: str) -> tuple[float, float]:
+    """Rounds to 4dp, not 2: recovery_rate is a 0-1 fraction printed as a
+    percentage, so 2dp would quantize every mean and stdev to a whole
+    percent and make the +/- values look fabricated."""
     values = [r[policy_name][field] for r in all_seed_results]
     mean = statistics.mean(values)
     stdev = statistics.stdev(values) if len(values) > 1 else 0.0
-    return round(mean, 2), round(stdev, 2)
+    return round(mean, 4), round(stdev, 4)
 
 
 def print_headline_report(all_seed_results: list[dict]) -> None:
@@ -164,7 +172,7 @@ def run_learning_curve(seeds: list[int] = (0, 1, 2)) -> dict:
         events = generate_batch(n=LEARNING_CURVE_N, seed=seed)
         for policy_cls in (BaselinePolicy, BanditPolicy, OraclePolicy):
             policy = policy_cls(seed=seed) if policy_cls is BanditPolicy else policy_cls()
-            rng = random.Random(seed * 7919 + hash(policy.name) % 10_000)
+            rng = random.Random(seed * 7919 + POLICY_RNG_OFFSET[policy.name])
             cumulative_net = 0.0
             checkpoint_idx = 0
             for i, event in enumerate(events, start=1):
