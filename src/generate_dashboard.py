@@ -257,7 +257,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 /*LIVE_CSS*/
 </style>
 </head>
-<body>
+<body data-pane="decision">
 {console_body(h, st)}
 
 <script>{vendor('countUp.umd.min.js')}</script>

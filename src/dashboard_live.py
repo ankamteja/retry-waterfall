@@ -634,9 +634,15 @@ syncAmount();
 /* Deliberately no decision on load. A page that starts computing and
    narrating before anyone asks it to reads as noise, and the first thing a
    visitor sees should be an instruction, not output. */
-$('lvOut').innerHTML='<div style="color:var(--dim);font-size:.9rem;padding:20px 4px">'+
-  'Set a reason, a category and an amount on the left, then press <b style="color:var(--text)">Run this '+
-  'payment</b>. The engine decides here in the page and shows every step it took.</div>';
+/* Read the label off the button rather than repeating it. The console shell
+   and the standalone page word this button differently, and a hardcoded
+   copy of it had already drifted into naming a button that did not exist. */
+(function(){
+  const b=$('lvRun'), label=(b&&b.textContent.trim())||'Run this payment';
+  $('lvOut').innerHTML='<div style="color:var(--dim);font-size:.9rem;padding:20px 4px">'+
+    'Set a reason, a category and an amount on the left, then press <b style="color:var(--text)">'+
+    label+'</b>. The engine decides here in the page and shows every step it took.</div>';
+})();
 
 /* ---- live traffic ---- */
 let stBatch=[], stIdx=0, stTimer=null;
@@ -954,6 +960,10 @@ SHELL_HTML = r"""
 SHELL_JS = r"""
 /* ---- tabs ---- */
 function showTab(name){
+  /* The rail styles itself off this: only the control group that drives the
+     visible pane keeps a solid button, so there is one obvious action rather
+     than four competing ones. */
+  document.body.dataset.pane=name;
   document.querySelectorAll('[data-tab]').forEach(s=>s.classList.toggle('show',s.dataset.tab===name));
   document.querySelectorAll('.navb').forEach(b=>b.classList.toggle('on',b.dataset.go===name));
   window.scrollTo({top:0,behavior:'instant'});

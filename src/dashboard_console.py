@@ -75,7 +75,7 @@ body{margin:0;background:var(--bg);color:var(--text);
 
 /* ── control rail ─────────────────────────────────────────────────── */
 .rail{border-right:1px solid var(--line);background:var(--surface);
-  padding:var(--s6);overflow-y:auto;display:flex;flex-direction:column;gap:var(--s8)}
+  padding:var(--s6);overflow-y:auto;display:flex;flex-direction:column;gap:var(--s6)}
 .grp{display:flex;flex-direction:column;gap:var(--s3)}
 .eyebrow{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
   font-weight:700;display:flex;align-items:center;gap:var(--s2)}
@@ -91,12 +91,43 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .amtrow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--s2)}
 .amtval{font-family:"Space Grotesk",sans-serif;font-size:19px;font-weight:700}
 .afaflag{font-size:10.5px;color:var(--attention);font-weight:600;min-height:1.2em;line-height:1.35}
-.btn{all:unset;box-sizing:border-box;width:100%;min-height:38px;display:flex;
+.btn{all:unset;box-sizing:border-box;width:100%;min-height:34px;display:flex;
   align-items:center;justify-content:center;gap:var(--s2);border-radius:var(--r-sm);
   font-family:"Space Grotesk",sans-serif;font-size:12.5px;font-weight:700;cursor:pointer;
   background:var(--accent);color:#07090F;transition:filter .16s,transform .1s}
 .btn:hover{filter:brightness(1.1)} .btn:active{transform:translateY(1px)}
 .btn:disabled{opacity:.4;cursor:not-allowed}
+/* Four control groups each with a solid button gave the rail four equally
+   loud primary actions and no indication which one drives what you are
+   looking at. A group's button is solid only while its pane is on stage;
+   the rest recede to the ghost treatment but stay clickable, because
+   pressing one is a legitimate way to switch context. */
+.rail .grp[data-for] .btn:not(.ghost){background:transparent;color:var(--muted);
+  box-shadow:inset 0 0 0 1px var(--line)}
+.rail .grp[data-for] .btn:not(.ghost):hover{color:var(--text);
+  box-shadow:inset 0 0 0 1px var(--line-2);filter:none}
+body[data-pane="decision"] .rail .grp[data-for~="decision"] .btn:not(.ghost),
+body[data-pane="sim"]      .rail .grp[data-for~="sim"]      .btn:not(.ghost),
+body[data-pane="stream"]   .rail .grp[data-for~="stream"]   .btn:not(.ghost),
+body[data-pane="evidence"] .rail .grp[data-for~="evidence"] .btn:not(.ghost),
+body[data-pane="how"]      .rail .grp[data-for~="how"]      .btn:not(.ghost){
+  background:var(--accent);color:#07090F;box-shadow:none}
+body[data-pane="decision"] .rail .grp[data-for~="decision"] .btn:not(.ghost):hover,
+body[data-pane="sim"]      .rail .grp[data-for~="sim"]      .btn:not(.ghost):hover,
+body[data-pane="stream"]   .rail .grp[data-for~="stream"]   .btn:not(.ghost):hover,
+body[data-pane="evidence"] .rail .grp[data-for~="evidence"] .btn:not(.ghost):hover,
+body[data-pane="how"]      .rail .grp[data-for~="how"]      .btn:not(.ghost):hover{
+  filter:brightness(1.1);box-shadow:none}
+/* The group on stage also gets a quiet marker, so the link between the rail
+   and the tab reads even before you notice the button weight. */
+.rail .grp[data-for]{position:relative}
+.rail .grp[data-for] .eyebrow{transition:color .18s}
+body[data-pane="decision"] .rail .grp[data-for~="decision"] .eyebrow,
+body[data-pane="sim"]      .rail .grp[data-for~="sim"]      .eyebrow,
+body[data-pane="stream"]   .rail .grp[data-for~="stream"]   .eyebrow,
+body[data-pane="evidence"] .rail .grp[data-for~="evidence"] .eyebrow,
+body[data-pane="how"]      .rail .grp[data-for~="how"]      .eyebrow{color:var(--muted)}
+
 .btn.ghost{background:transparent;color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
 .btn.ghost:hover{box-shadow:inset 0 0 0 1px var(--dim)}
 .btn.ghost.on{color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
@@ -212,7 +243,7 @@ def console_body(h, st):
   <div class="body">
 
     <aside class="rail">
-      <div class="grp">
+      <div class="grp" data-for="decision">
         <div class="eyebrow">Compose a failed payment</div>
         <div><label for="lvCode">Why the debit failed</label><select id="lvCode"></select></div>
         <div><label for="lvCat">What it was for</label><select id="lvCat"></select></div>
@@ -230,14 +261,14 @@ def console_body(h, st):
         <div id="lvDist"></div>
       </div>
 
-      <div class="grp">
+      <div class="grp" data-for="sim">
         <div class="eyebrow">Benchmark</div>
         <div class="hint">Sixty fresh payments. Blind retry against this, identical luck.</div>
         <button class="btn" id="rcRun">Race 60 payments</button>
         <button class="btn ghost" id="rcAgain">Wipe what it learned, race again</button>
       </div>
 
-      <div class="grp">
+      <div class="grp" data-for="stream">
         <div class="eyebrow">Traffic</div>
         <div class="btnrow">
           <button class="btn" id="stPlay">Play</button>
@@ -252,7 +283,7 @@ def console_body(h, st):
           style="display:inline-block;vertical-align:middle"></span> <span id="stState">idle</span></div>
       </div>
 
-      <div class="grp">
+      <div class="grp" data-for="stream">
         <div class="eyebrow">Webhook</div>
         <div class="wirehead"><span class="sdot" id="wDot"></span><span id="wState">checking</span></div>
         <div class="hint" id="wModel"></div>
