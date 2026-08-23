@@ -164,6 +164,7 @@ Then either open `data/dashboard.html` directly, or:
 
 ```bash
 python3 src/server.py              # http://localhost:8934
+PORT=8935 python3 src/server.py    # if 8934 is taken
 ```
 
 The page detects which mode it is in and says so in the nav. Without the

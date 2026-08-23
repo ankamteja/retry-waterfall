@@ -269,8 +269,14 @@ you" does not.
 | `src/pipeline_stats.py` | Rolls the audit trail into per-stage/per-channel/per-window breakdowns. |
 | `src/explain_exceptions.py` | Uses an LLM to write plain-English explanations of decisions. |
 | `src/razorpay_adapter.py` | Maps real Razorpay webhooks into the engine. |
+| `src/recovery_actions.py` | The outbound edge. Builds the concrete call each terminal branch implies, re-checks compliance itself, and never sends. |
 | `src/test_razorpay_adapter.py` | 15 tests proving the adapter handles the real payload shapes. |
+| `src/test_recovery_actions.py` | 22 tests, most asserting the executor refuses what the rails forbid. |
 | `src/generate_dashboard.py` | Builds the self-contained HTML dashboard. |
+| `src/dashboard_live.py` | The engine ported to the browser, constants generated from the Python. |
+| `src/dashboard_race.py` | The head-to-head race against blind retry, same payments and same luck. |
+| `src/dashboard_console.py` | The operator console shell: control rail, tabbed stage, log strip. |
+| `src/server.py` | Optional. Live model output and real webhook ingestion over SSE. |
 | `src/vendor_fonts.py` | Downloads and inlines fonts so the page works offline. |
 
 **The separation of `domain_rules.py` from `synthetic_data.py` is itself
@@ -448,6 +454,7 @@ python3 explain_exceptions.py    # LLM explanations (or --offline for templates)
 python3 generate_dashboard.py    # build data/dashboard.html
 
 python3 test_razorpay_adapter.py # 15 tests, no network needed
+python3 test_recovery_actions.py # 22 tests, no network needed
 ```
 
 Then open `data/dashboard.html` in any browser. It is fully

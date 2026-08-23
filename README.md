@@ -26,6 +26,13 @@ ingest -> classify -> compliance gate -> channel policy -> outcome
 4. **Channel policy.** A Thompson Sampling contextual bandit picks the contact channel -- SMS or IVR -- for each scheduled retry, conditioned on (decline reason, retry window). It may skip an attempt entirely if the expected net value is negative for all channels. See the design decision below.
 5. **Outcome.** The payment is either recovered or retries are exhausted and it is logged for manual follow-up.
 
+Every terminal branch then produces a concrete outbound action (`src/recovery_actions.py`), so the loop ends in something that would actually reach a customer rather than in a decision nobody acts on. Five kinds: `send_sms`, `place_ivr_call`, `create_auth_payment_link` (a real Razorpay `POST /v1/payment_links`), `suppress_no_retry`, `escalate_to_manual_review`.
+
+Two properties of that edge matter more than the calls themselves:
+
+- **It is dry run only. No live send path exists in the repository.** `RecoveryExecutor._dispatch` raises `NotImplementedError`. Nothing transmits, which is why the repo ships no credentials and why every request body stays reviewable as data.
+- **It re-derives its own authorisation rather than trusting the caller.** Every emit re-checks the NPCI and RBI rules from `domain_rules` and raises `ComplianceViolation` instead of producing an action. The policy layer has already refused these cases, so the guard should never fire -- that is the point. It is a second, independent gate on the only step in the system that can touch a customer. See `docs/razorpay_integration.md` for which payloads are verified and which are illustrative.
+
 ## The key design decision
 
 **The AI never chooses retry timing.** Timing is fixed by NPCI regulation: T+24h, T+72h, T+7d, 4 attempts maximum. Both the baseline and the bandit follow that identical schedule.
@@ -83,9 +90,18 @@ python3 explain_exceptions.py    # LLM explanations (or --offline for templates)
 python3 generate_dashboard.py    # build data/dashboard.html
 
 python3 test_razorpay_adapter.py # 15 tests, no network needed
+python3 test_recovery_actions.py # 22 tests, no network needed
 ```
 
 Then open `data/dashboard.html` in any browser. It is fully self-contained -- fonts, Three.js, and the force-graph library are vendored and inlined. It works with no network.
+
+For the live version -- a model writing each explanation as it happens, and real Razorpay webhook bodies arriving over SSE -- run the optional server instead:
+
+```bash
+python3 src/server.py            # http://localhost:8934, or PORT=8935 to move it
+```
+
+The page detects which mode it is in and says so. Neither mode is required by the other.
 
 `explain_exceptions.py` is the only script that needs a network (when generating, not when viewing). Its output is committed, so the dashboard never calls a model at runtime. The public repo ships no API key.
 
@@ -101,11 +117,19 @@ Then open `data/dashboard.html` in any browser. It is fully self-contained -- fo
 | `src/pipeline_stats.py` | Rolls audit trail into per-stage, per-channel, per-window breakdowns. |
 | `src/explain_exceptions.py` | Uses an LLM to write plain-English explanations of decisions. LLM writes language only; every number comes from the audit trail. |
 | `src/razorpay_adapter.py` | Maps real Razorpay webhook payloads into the engine's domain objects. |
+| `src/recovery_actions.py` | The outbound edge. Turns each terminal branch into the concrete call it implies, re-derives compliance authorisation itself, and never sends. |
 | `src/test_razorpay_adapter.py` | 15 tests proving the adapter handles real payload shapes. |
+| `src/test_recovery_actions.py` | 22 tests, most of them asserting the executor refuses calls the rails forbid. |
 | `src/generate_dashboard.py` | Builds the self-contained HTML dashboard. |
+| `src/dashboard_live.py` | The engine ported to the browser, with every threshold and cost generated from the Python so the two cannot drift. |
+| `src/dashboard_race.py` | The head-to-head race: blind retry against the agent, same payments, same luck. |
+| `src/dashboard_console.py` | The operator console shell -- control rail, tabbed stage, shared log strip. |
+| `src/server.py` | Optional. Serves the page, proxies a model, ingests real webhooks, streams decisions over SSE. |
 | `src/vendor_fonts.py` | Downloads and inlines fonts for offline operation. |
 | `vendor/` | Vendored JS dependencies (Three.js, 3d-force-graph, countUp). |
 | `docs/EXPLAINER.md` | Full technical explainer: the problem, the architecture, the eval, the bugs. |
+| `docs/ARCHITECTURE.md` | How the pieces fit and why the seams are where they are. |
+| `docs/razorpay_integration.md` | What was verified against Razorpay's public docs, and what is illustrative. |
 
 ## Limitations
 
@@ -119,6 +143,8 @@ Say these before a judge finds them.
 
 4. **The adapter is tested, not deployed.** It handles real payload shapes verified from the docs, with 15 passing tests, but it has not run against a live Razorpay test-mode account.
 
-5. **The LLM writes language only.** It never makes a decision. Every number in its explanations comes from the audit trail. This is a design choice, but it means the "AI" in the demo is mostly the bandit, not the language model.
+5. **The outbound executor builds the exact call and does not send it.** There is no code path in the repository that transmits. Adding a sending subclass is the deployment step, and the only place a credential would ever appear.
 
-6. **`domain_rules.py` encodes regulation as checked on 2026-08-22.** NPCI and RBI update circulars periodically. The cap, windows, and AFA thresholds should be re-verified before any production use.
+6. **The LLM writes language only.** It never makes a decision. Every number in its explanations comes from the audit trail. This is a design choice, but it means the "AI" in the demo is mostly the bandit, not the language model.
+
+7. **`domain_rules.py` encodes regulation as checked on 2026-08-22.** NPCI and RBI update circulars periodically. The cap, windows, and AFA thresholds should be re-verified before any production use.
