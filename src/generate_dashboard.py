@@ -120,6 +120,9 @@ def main():
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Retry Waterfall Recovery Control Room</title>
+<!-- Inlined, like everything else here: a linked favicon is the one request
+     this page would otherwise make, and its 404 was the only console error. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233B9B7D'/%3E%3Ctext x='16' y='23' font-family='Helvetica,Arial,sans-serif' font-size='19' font-weight='700' fill='%230A0E1A' text-anchor='middle'%3ER%3C/text%3E%3C/svg%3E">
 <style>
 {vendor('fonts.css')}
 
@@ -333,16 +336,18 @@ cu('k-ref',  D.stats.hard_declines.length, {{suffix:' payments'}});
     const T=window.THREE, pad=8, W=420, H=132, S=3;   // S = supersample for crisp text
     const cv=document.createElement('canvas'); cv.width=W*S; cv.height=H*S;
     const x=cv.getContext('2d'); x.scale(S,S); x.textAlign='center';
-    x.font='700 25px "Space Grotesk", sans-serif'; x.fillStyle=n.color;
-    x.fillText(n.t, W/2, 34);
-    x.font='400 20px Inter, sans-serif'; x.fillStyle='#8A97B0';
-    x.fillText(n.d, W/2, 62+pad);
+    x.font='700 34px "Space Grotesk", sans-serif'; x.fillStyle=n.color;
+    x.fillText(n.t, W/2, 40);
+    x.font='400 26px Inter, sans-serif'; x.fillStyle='#8A97B0';
+    x.fillText(n.d, W/2, 72+pad);
     const sp=new T.Sprite(new T.SpriteMaterial({{
       map:Object.assign(new T.CanvasTexture(cv),{{minFilter:T.LinearFilter}}),
       transparent:true, depthWrite:false
     }}));
-    sp.scale.set(74, 23, 1);
-    sp.position.set(0, -19, 0);
+    // Sized against the node spacing: 100 world units of label between nodes
+    // 125 apart leaves a gap, and anything wider makes adjacent labels touch.
+    sp.scale.set(100, 31, 1);
+    sp.position.set(0, -25, 0);
     const g=new T.Group();
     g.add(new T.Mesh(new T.SphereGeometry(Math.cbrt(n.val)*3.1, 26, 26),
       new T.MeshBasicMaterial({{color:n.color}})));  // Basic, not Lambert: colour must not depend on scene lights
@@ -365,15 +370,30 @@ cu('k-ref',  D.stats.hard_declines.length, {{suffix:' payments'}});
   // Explicit camera distance, not zoomToFit: the label sprites inflate each
   // node's bounding box, so zoomToFit pulls back until the pipeline is a
   // speck. Derived from the actual node span and the container aspect.
-  const SPAN=560;
+  // Horizontal span is ingest to the recovered/exhausted column. Vertical span
+  // runs from the top of the Recovered node down past the AFA branch and its
+  // label, which hangs below the node. Fitting on width alone framed the AFA
+  // node off the bottom edge in a wide, short container, so fit on whichever
+  // axis is binding and aim the camera at the content's centre, not the origin.
+  const SPAN=560, VSPAN=205, VCENTRE=-31;
   function fit(){{
     const w=el.clientWidth, h=el.clientHeight;
     G.width(w).height(h);
-    const vfov=50*Math.PI/180;
-    const hSpan=Math.tan(vfov/2)*(w/h);          // half-width visible per unit distance
-    G.cameraPosition({{x:0, y:0, z:(SPAN/2)/hSpan*1.12}});  // 1.12 = breathing room
+    const vfov=50*Math.PI/180, t=Math.tan(vfov/2);
+    const zH=(SPAN/2)/(t*(w/h));                 // distance needed to fit the width
+    const zV=(VSPAN/2)/t;                        // distance needed to fit the height
+    G.cameraPosition({{x:0, y:VCENTRE, z:Math.max(zH,zV)*1.08}},  // 1.08 = breathing room
+                     {{x:0, y:VCENTRE, z:0}});
   }}
-  fit(); addEventListener('resize',fit);
+  // The Pipeline pane is display:none until its tab is selected, so at load
+  // the container measures 0x0, G.width(0).height(0) is meaningless and the
+  // camera distance divides by a zero aspect and comes out NaN. Fitting once
+  // at load therefore left the tab permanently blank. Observe the container
+  // instead: this fires when the pane first becomes visible, and again on
+  // every window resize, so there is no coupling to the tab switcher.
+  function tryFit(){{ if(el.clientWidth>0 && el.clientHeight>0) fit(); }}
+  new ResizeObserver(tryFit).observe(el);
+  tryFit(); addEventListener('resize',tryFit);
 }})();
 
 /* ---- learning curve ---- */
