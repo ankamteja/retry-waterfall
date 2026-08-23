@@ -26,6 +26,7 @@ from domain_rules import RETRY_WINDOWS_HOURS, is_hard_decline, requires_addition
 from synthetic_data import generate_batch, recovery_probability
 from policies import BaselinePolicy, BanditPolicy, OraclePolicy, CHANNEL_COST_INR
 from audit_log import AuditLog, AuditRecord
+from recovery_actions import DryRunExecutor, RecoveryExecutor
 
 N_SEEDS = 200
 HEADLINE_N = 60
@@ -51,7 +52,14 @@ def outcome_draw(seed: int, payment_id: str, window_hours: int, channel: str) ->
     return int.from_bytes(h[:8], "big") / 2**64
 
 
-def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None) -> dict:
+def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None,
+                        executor: RecoveryExecutor | None = None) -> dict:
+    """`executor` is opt-in for the same reason `audit_log` is: the headline
+    runs this 200 x 60 times plus 2,400 single-event calls for the learning
+    curve, and materialising an action object for every one of those would
+    cost time and produce a file nobody reads. The demo seed passes one; the
+    measurement runs do not. The executor is a pure output layer either way,
+    so the numbers are identical with or without it."""
     total_gross = 0.0
     total_cost = 0.0
     recovered_count = 0
@@ -70,6 +78,12 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None)
                     expected_net_inr=None, rationale="hard decline: not retryable, compliance no-retry",
                     recovered=None, stopping_rule="hard_decline_no_retry",
                 ))
+            if executor:
+                executor.suppress_hard_decline(
+                    payment_id=event.payment_id, amount_inr=event.amount_inr,
+                    decline_code=event.decline_code,
+                    rationale="hard decline: not retryable, compliance no-retry",
+                )
             continue
 
         # RBI additional-factor-auth. Above the threshold the customer must
@@ -89,6 +103,13 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None)
                                f"silent auto-debit retry not permitted"),
                     recovered=None, stopping_rule="afa_required_escalate_to_auth_link",
                 ))
+            if executor:
+                executor.escalate_afa(
+                    payment_id=event.payment_id, amount_inr=event.amount_inr,
+                    category=event.category, decline_code=event.decline_code,
+                    rationale=(f"amount exceeds RBI AFA threshold for category "
+                               f"'{event.category}': customer re-authentication required"),
+                )
             continue
 
         recovered = False
@@ -108,6 +129,14 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None)
                         stopping_rule="npci_retry_cap_exhausted" if is_last_window else None,
                     ))
                 continue
+
+            if executor:
+                executor.contact(
+                    payment_id=event.payment_id, amount_inr=event.amount_inr,
+                    category=event.category, decline_code=event.decline_code,
+                    attempt_number=attempt_number, window_hours=window_hours,
+                    channel=decision.channel, rationale=decision.rationale,
+                )
 
             true_p = recovery_probability(event.decline_code, window_hours, decision.channel)
             success = outcome_draw(seed, event.payment_id, window_hours, decision.channel) < true_p
@@ -132,6 +161,12 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None)
 
         if not recovered:
             exceptions.append(event.payment_id)
+            if executor:
+                executor.escalate_manual(
+                    payment_id=event.payment_id, amount_inr=event.amount_inr,
+                    decline_code=event.decline_code,
+                    rationale="all permitted retry windows used without recovery",
+                )
 
     return {
         "policy": policy.name,
@@ -149,19 +184,34 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None)
 
 
 def run_one_seed(n: int, seed: int, audit_dir: str | None = None) -> dict:
+    """When `audit_dir` is set this is the demo run: it writes the full
+    per-decision audit trail and, for the bandit only, the outbound actions
+    that trail implies. Only the bandit gets an executor because it is the
+    shipped policy -- baseline and oracle exist to be measured against, and
+    an oracle is not deployable, so logging the calls it "would make" would
+    be theatre."""
     events = generate_batch(n=n, seed=seed)
     results = {}
     for policy_cls in (BaselinePolicy, BanditPolicy, OraclePolicy):
         policy = policy_cls(seed=seed) if policy_cls is BanditPolicy else policy_cls()
         audit_log = None
+        executor = None
         if audit_dir:
             os.makedirs(audit_dir, exist_ok=True)
             audit_log = AuditLog(os.path.join(audit_dir, f"audit_{policy.name}_seed{seed}.jsonl"))
+            if policy.name == "bandit":
+                executor = DryRunExecutor(os.path.join(audit_dir, f"actions_{policy.name}_seed{seed}.jsonl"))
         try:
-            results[policy.name] = run_policy_on_batch(policy, events, seed, audit_log)
+            results[policy.name] = run_policy_on_batch(policy, events, seed, audit_log, executor)
+            if executor:
+                results[policy.name]["action_summary"] = executor.summary()
+            if audit_dir and policy.name == "bandit":
+                results[policy.name]["posteriors"] = policy.export_posteriors()
         finally:
             if audit_log:
                 audit_log.close()
+            if executor:
+                executor.close()
     return results
 
 
@@ -241,7 +291,17 @@ def main():
 
     # Representative audit trail for the demo UI (task #5): one seed, all
     # three policies, full per-decision JSONL.
-    run_one_seed(HEADLINE_N, seed=0, audit_dir=DATA_DIR)
+    demo = run_one_seed(HEADLINE_N, seed=0, audit_dir=DATA_DIR)
+
+    action_summary = demo["bandit"]["action_summary"]
+    print(f"\n=== Outbound actions, bandit, seed 0 (dry run: {action_summary['dry_run']}) ===")
+    for kind, count in sorted(action_summary["by_kind"].items(), key=lambda kv: -kv[1]):
+        print(f"{kind:<28}{count:>4}   INR {action_summary['amount_inr_by_kind'][kind]:>12,.2f}")
+    print(f"{'':<28}{'':>4}   {action_summary['outbound_calls']} of "
+          f"{action_summary['total_actions']} actions are outbound calls, "
+          f"{action_summary['customer_contacts']} reach a customer")
+    with open(os.path.join(DATA_DIR, "action_summary.json"), "w") as f:
+        json.dump(action_summary, f, indent=2)
 
     with open(os.path.join(DATA_DIR, "headline_summary.json"), "w") as f:
         json.dump(all_seed_results, f, indent=2)

@@ -118,6 +118,33 @@ class BanditPolicy:
         else:
             self._beta[key] = self._beta.get(key, 1.0) + 1.0
 
+    def export_posteriors(self) -> list[dict]:
+        """Dump what this bandit has actually learned, one row per arm.
+
+        The dashboard runs the same Thompson Sampling step in the browser so
+        a visitor can drive the live policy. It needs the trained state to do
+        that honestly -- a page that re-samples from an untrained Beta(1,1)
+        would be a mock of the policy, not the policy. Exporting alpha/beta
+        rather than a point estimate keeps the uncertainty, which is the
+        whole mechanism: a thinly-pulled arm has to still sample wide.
+        """
+        keys = set(self._alpha) | set(self._beta)
+        rows = []
+        for decline_code, window_hours, channel in sorted(keys, key=lambda k: (k[0].value, k[1], k[2])):
+            key = (decline_code, window_hours, channel)
+            alpha = self._alpha.get(key, 1.0)
+            beta = self._beta.get(key, 1.0)
+            rows.append({
+                "decline_code": decline_code.value,
+                "window_hours": window_hours,
+                "channel": channel,
+                "alpha": alpha,
+                "beta": beta,
+                "pulls": int(alpha + beta - 2),      # the Beta(1,1) prior is not evidence
+                "mean_p": round(alpha / (alpha + beta), 4),
+            })
+        return rows
+
 
 class OraclePolicy:
     """Perfect information: reads the true recovery_probability() from
