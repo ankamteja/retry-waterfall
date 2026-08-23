@@ -220,7 +220,7 @@ the true recovery probabilities — and reports performance as a fraction of
 that ceiling. See Part 6.
 
 > *Pitch line:* "We don't claim we win. We report how much of the
-> achievable gap we close: 63%."
+> achievable gap we close: 51.1%."
 
 ---
 
@@ -350,7 +350,7 @@ perfect information, not learnable, not deployable. It's the ceiling.
 
 Now the claim isn't "we beat the baseline." It's:
 
-> **The bandit captures 63.0% of the achievable lift over the baseline.**
+> **The bandit captures 51.1% of the achievable lift over the baseline.**
 
 That's a falsifiable, honest number. It says the approach works and is
 also visibly not perfect — which is far more credible than 100%.
@@ -409,8 +409,11 @@ The per-policy RNG seed was derived from `hash(policy.name)`. **Python
 randomises string hashes per process.** Two identical runs gave 62.7% and
 19.8%.
 
-Fixed with fixed integer offsets (`POLICY_RNG_OFFSET`). Verified: repeated
-runs now produce 63.0% every time.
+Fixed by removing per-policy RNG streams entirely. The outcome of an
+attempt is now a hash of (seed, payment, window, channel), so it does not
+depend on which policy is asking or how many draws that policy has already
+made. See `outcome_draw` in `eval_harness.py`. Verified: repeated runs are
+now identical.
 
 *This is also what proved 25 seeds was too few — the metric was that
 noisy. Hence 200.*
@@ -469,7 +472,7 @@ Say these before a judge finds them.
    outcome data, because that isn't public. The *structure* (soft vs hard,
    the NPCI cap, the windows) is sourced; the *probabilities* are not.
 
-2. **63% of oracle is measured inside that simulator.** If the real
+2. **51.1% of oracle is measured inside that simulator.** If the real
    world's channel-effectiveness differences are smaller, there's less for
    the bandit to capture.
 

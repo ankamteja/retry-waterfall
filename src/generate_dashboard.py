@@ -351,7 +351,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
         <p class="note" style="margin:15px 0 0;font-size:.8rem">&plusmn;1 s.d. on net recovered:
           baseline &#8377;{h['baseline']['net_sd']:,.0f}, bandit &#8377;{h['bandit']['net_sd']:,.0f},
           oracle &#8377;{h['oracle']['net_sd']:,.0f}. {h['n_events']} events &times; {h['n_seeds']} seeds,
-          fixed RNG offsets, reproducible run to run.</p>
+          common random numbers across policies, reproducible run to run.</p>
       </div>
       <div class="card pad">
         <div style="font-size:.78rem;color:var(--dim);margin-bottom:4px;text-transform:uppercase;
