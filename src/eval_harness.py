@@ -303,6 +303,11 @@ def main():
     with open(os.path.join(DATA_DIR, "action_summary.json"), "w") as f:
         json.dump(action_summary, f, indent=2)
 
+    # What the bandit actually learned, so the dashboard can run the trained
+    # policy live in the browser rather than animating a recording of it.
+    with open(os.path.join(DATA_DIR, "posteriors.json"), "w") as f:
+        json.dump(demo["bandit"]["posteriors"], f, indent=2)
+
     with open(os.path.join(DATA_DIR, "headline_summary.json"), "w") as f:
         json.dump(all_seed_results, f, indent=2)
 

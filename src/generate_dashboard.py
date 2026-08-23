@@ -22,6 +22,9 @@ repo offline; a blank page in either case is unacceptable.
 import json
 import os
 
+from dashboard_live import (ENGINE_JS, LIVE_CSS, LIVE_HTML, LIVE_UI_JS, NETWORK_CSS,
+                            NETWORK_HTML, NETWORK_JS, live_constants)
+
 SRC_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(SRC_DIR, "..", "data")
 VENDOR_DIR = os.path.join(SRC_DIR, "..", "vendor")
@@ -98,6 +101,7 @@ def main():
     except FileNotFoundError:
         explanations = {}
     records = [json.loads(l) for l in open(os.path.join(DATA_DIR, "audit_bandit_seed0.jsonl"))]
+    posteriors = load("posteriors.json")
 
     h = headline(seed_results)
     st = stats["stages"]
@@ -245,6 +249,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 @media(max-width:900px){{.kpis,.two{{grid-template-columns:1fr 1fr;}}
   .lane,.tl-head{{grid-template-columns:120px 1fr 84px;}}}}
 @media(max-width:600px){{.kpis,.two{{grid-template-columns:1fr;}}}}
+/*LIVE_CSS*/
 </style>
 </head>
 <body>
@@ -275,9 +280,9 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 </div></div>
 
 <div class="wrap">
-
+<!--LIVE_HTML-->
   <section>
-    <div class="shead"><span class="snum">01</span><h2>The retry timeline</h2></div>
+    <div class="shead"><span class="snum">04</span><h2>The retry timeline</h2></div>
     <p class="note">One lane per payment, running left to right over the seven days the regulation allows.
       Each marker is one permitted attempt. <b>The amber line is the NPCI wall.</b> Four attempts,
       then the cycle is closed whether or not the money came back. Filled teal is the attempt that
@@ -291,7 +296,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   </section>
 
   <section>
-    <div class="shead"><span class="snum">02</span><h2>Where each payment goes</h2></div>
+    <div class="shead"><span class="snum">05</span><h2>Where each payment goes</h2></div>
     <p class="note">The same batch as a flow. Particles are real volume. The compliance gate is red because
       it <b>stopped {st['compliance_gate']['refused']} payments a naive retry bot would have illegally retried</b>,
       and the amber branch is {st['compliance_gate'].get('afa_escalated', 0)} payments over the RBI
@@ -308,7 +313,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   </section>
 
   <section>
-    <div class="shead"><span class="snum">03</span><h2>Does it actually learn?</h2></div>
+    <div class="shead"><span class="snum">06</span><h2>Does it actually learn?</h2></div>
     <p class="note">A bandit always beats a naive baseline inside its own simulator, so that on its own proves nothing.
       So it is also scored against an <b>oracle</b> that knows the true recovery probabilities: the realistic
       ceiling. The claim is not "we win", it is <b>how much of the achievable gap it closes</b>, averaged over
@@ -341,7 +346,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   </section>
 
   <section>
-    <div class="shead"><span class="snum">04</span><h2>Why it did that, in plain English</h2></div>
+    <div class="shead"><span class="snum">07</span><h2>Why it did that, in plain English</h2></div>
     <p class="note">An LLM turns each audit record into something a finance-ops person can act on. It writes
       <b>language only</b>. Every number and every decision comes from the audit trail, never from the
       model. Generated offline by <code>src/explain_exceptions.py</code> and committed, so this page needs no
@@ -353,7 +358,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
   </section>
 
   <section>
-    <div class="shead"><span class="snum">05</span><h2>Where the money came from</h2></div>
+    <div class="shead"><span class="snum">08</span><h2>Where the money came from</h2></div>
     <div class="two">
       <div class="card pad">
         <div style="font-size:.78rem;color:var(--dim);margin-bottom:11px;text-transform:uppercase;
@@ -387,6 +392,9 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 <script>
 const D = {payload};
 const C = {{teal:'#3B9B7D', red:'#C54D4D', amber:'#E8B86D', accent:'#5E86C7', slate:'#3E4A63'}};
+/*LIVE_ENGINE*/
+/*LIVE_NETWORK*/
+/*LIVE_UI*/
 
 /* counters */
 const cu=(id,v,o)=>new countUp.CountUp(id,v,Object.assign({{duration:1.9}},o)).start();
@@ -578,6 +586,20 @@ table('t-win',[{{t:'Retry window'}},{{t:'Attempts',n:1}},{{t:'Wins',n:1}},{{t:'W
 </body>
 </html>
 """
+    # Placeholder substitution rather than f-string interpolation: the live
+    # blocks are CSS and JavaScript, both brace-heavy, and doubling every
+    # brace in them to survive an f-string would make them unreadable and
+    # unmaintainable for no gain.
+    # Order matters in the script block: the engine defines the helpers, the
+    # network layer runs statements at its own top level that use them, and
+    # the UI code renders a first decision on load which needs both.
+    html = (html
+            .replace("/*LIVE_CSS*/", LIVE_CSS + NETWORK_CSS)
+            .replace("<!--LIVE_HTML-->", LIVE_HTML + NETWORK_HTML)
+            .replace("/*LIVE_ENGINE*/", ENGINE_JS.replace("LIVE_CONSTANTS", live_constants(posteriors)))
+            .replace("/*LIVE_NETWORK*/", NETWORK_JS)
+            .replace("/*LIVE_UI*/", LIVE_UI_JS))
+
     with open(OUT_PATH, "w") as f:
         f.write(html)
     print(f"Wrote {os.path.abspath(OUT_PATH)} ({os.path.getsize(OUT_PATH)//1024} KB)")

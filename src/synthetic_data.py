@@ -12,6 +12,25 @@ from domain_rules import DeclineCode, SOFT_DECLINES, HARD_DECLINES
 
 CATEGORIES = ["subscription", "mutual_fund", "insurance", "credit_card_bill"]
 
+AMOUNT_RANGE_INR = (200.0, 25_000.0)
+
+# The realistic mix: skewed toward soft declines, because most failed
+# recurring payments are transient, with hard declines a meaningful minority
+# so the eval exercises the compliance no-retry path too.
+#
+# Hoisted out of generate_batch so the dashboard can generate fresh batches
+# in the browser from this exact table. A retyped copy in JavaScript would
+# drift from this one the first time anybody edited either.
+DEFAULT_DECLINE_DISTRIBUTION = {
+    DeclineCode.INSUFFICIENT_FUNDS: 0.35,
+    DeclineCode.BANK_SERVER_TIMEOUT: 0.15,
+    DeclineCode.ISSUER_SOFT_DECLINE: 0.15,
+    DeclineCode.CARD_EXPIRED: 0.15,
+    DeclineCode.MANDATE_REVOKED: 0.10,
+    DeclineCode.ACCOUNT_CLOSED: 0.05,
+    DeclineCode.ISSUER_HARD_DECLINE: 0.05,
+}
+
 # Base probability a soft decline recovers on a given retry, before
 # window/channel effects. Hard declines are never retried (0.0, enforced
 # by domain_rules.is_hard_decline, not by this model).
@@ -56,22 +75,12 @@ def generate_batch(n: int = 60, decline_distribution: dict[DeclineCode, float] |
                     seed: int | None = None) -> list[FailedPaymentEvent]:
     """
     n: batch size.
-    decline_distribution: DeclineCode -> weight. Defaults to a realistic mix
-        skewed toward soft declines (most failed recurring payments are
-        transient), with hard declines a meaningful minority so the eval
-        exercises the compliance no-retry path too.
+    decline_distribution: DeclineCode -> weight. Defaults to
+        DEFAULT_DECLINE_DISTRIBUTION.
     """
     rng = random.Random(seed)
     if decline_distribution is None:
-        decline_distribution = {
-            DeclineCode.INSUFFICIENT_FUNDS: 0.35,
-            DeclineCode.BANK_SERVER_TIMEOUT: 0.15,
-            DeclineCode.ISSUER_SOFT_DECLINE: 0.15,
-            DeclineCode.CARD_EXPIRED: 0.15,
-            DeclineCode.MANDATE_REVOKED: 0.10,
-            DeclineCode.ACCOUNT_CLOSED: 0.05,
-            DeclineCode.ISSUER_HARD_DECLINE: 0.05,
-        }
+        decline_distribution = DEFAULT_DECLINE_DISTRIBUTION
     codes = list(decline_distribution.keys())
     weights = list(decline_distribution.values())
 
