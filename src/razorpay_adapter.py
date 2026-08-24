@@ -30,7 +30,7 @@ gap analysis this adapter is built around):
 
 from dataclasses import dataclass
 
-from domain_rules import DeclineCode, MAX_ATTEMPTS_PER_CYCLE
+from domain_rules import DeclineCode, MAX_ATTEMPTS_PER_CYCLE, is_hard_decline
 from synthetic_data import FailedPaymentEvent
 
 RECOVERY_EVENTS = {"subscription.pending", "subscription.halted", "subscription.charged"}
@@ -71,7 +71,25 @@ class RazorpaySignal:
     decline_code: DeclineCode | None
     reason_raw: str | None
     attempts_remaining: int
-    should_recover: bool
+
+    # "Hand this to the engine", which is not the same as "retry this".
+    # A hard decline sets this True and is then refused downstream, because
+    # refusing is a decision the engine has to make, audit and report -- an
+    # adapter that dropped it silently would lose the refusal from the trail.
+    should_process: bool
+
+    @property
+    def retry_permitted(self) -> bool:
+        """Whether a retry contact could lawfully be made for this signal.
+
+        The field the engine routes on and the question "may this be retried"
+        are different questions, and answering both with one flag is what made
+        an unmapped reason read as recoverable while being classified as a
+        hard decline. They are now two facts with two names.
+        """
+        return (self.should_process
+                and self.decline_code is not None
+                and not is_hard_decline(self.decline_code))
 
 
 def _amount_inr(paise: int | None) -> float:
@@ -105,7 +123,7 @@ def parse_webhook(payload: dict) -> RazorpaySignal | None:
     # subscription.charged closes the case; subscription.halted means
     # Razorpay already exhausted the cycle, so the agent must not add
     # attempts on top -- it escalates to a human instead.
-    should_recover = (
+    should_process = (
         event == "subscription.pending"
         and remaining > 0
         and decline is not None
@@ -120,15 +138,15 @@ def parse_webhook(payload: dict) -> RazorpaySignal | None:
         decline_code=decline,
         reason_raw=reason,
         attempts_remaining=remaining,
-        should_recover=should_recover,
+        should_process=should_process,
     )
 
 
 def to_event(signal: RazorpaySignal, category: str = "subscription") -> FailedPaymentEvent:
     """Turn a recoverable signal into the engine's own event type, so the
     same policies that run on the synthetic batch run on live traffic."""
-    if not signal.should_recover or signal.decline_code is None:
-        raise ValueError(f"{signal.subscription_id}: signal is not recoverable")
+    if not signal.should_process or signal.decline_code is None:
+        raise ValueError(f"{signal.subscription_id}: signal is not one the engine processes")
     return FailedPaymentEvent(
         payment_id=signal.payment_id or signal.subscription_id,
         amount_inr=signal.amount_inr,

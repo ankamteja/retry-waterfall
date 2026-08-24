@@ -217,7 +217,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(200, {"ignored": True,
                                             "reason": "not a recovery event"})
                 category = payload.get("category", "subscription")
-                if not signal.should_recover:
+                if not signal.should_process:
                     result = {"payment_id": signal.payment_id or signal.subscription_id,
                               "outcome": "no_recovery_window",
                               "reason": f"event {signal.event}, "

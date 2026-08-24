@@ -19,7 +19,6 @@ encoding — most public dunning writeups (Stripe/Recurly/Chargebee) are
 US/SaaS-card-centric and don't reflect India's NPCI mandate caps.
 """
 
-from dataclasses import dataclass
 from enum import Enum
 
 
@@ -65,13 +64,3 @@ def requires_additional_factor_auth(amount_inr: float, category: str) -> bool:
 
 def is_hard_decline(code: DeclineCode) -> bool:
     return code in HARD_DECLINES
-
-
-@dataclass(frozen=True)
-class MandateContext:
-    amount_inr: float
-    category: str  # e.g. "subscription", "mutual_fund", "insurance", "credit_card_bill"
-    attempt_number: int  # 1..MAX_ATTEMPTS_PER_CYCLE
-
-    def attempts_exhausted(self) -> bool:
-        return self.attempt_number >= MAX_ATTEMPTS_PER_CYCLE

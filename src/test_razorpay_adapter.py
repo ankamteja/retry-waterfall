@@ -39,7 +39,8 @@ def main():
     print("razorpay_adapter")
 
     s = parse_webhook(webhook("subscription.pending", reason="insufficient_funds"))
-    ok &= check("soft decline on pending is recoverable", s.should_recover)
+    ok &= check("soft decline on pending is processed", s.should_process)
+    ok &= check("and a retry is permitted for it", s.retry_permitted)
     ok &= check("insufficient_funds maps to soft code",
                 s.decline_code is DeclineCode.INSUFFICIENT_FUNDS)
     ok &= check("paise converted to rupees", s.amount_inr == 1499.00)
@@ -52,17 +53,17 @@ def main():
     # The agent must not stack attempts on top of a cycle Razorpay already
     # exhausted -- that is the compliance-critical case.
     s = parse_webhook(webhook("subscription.halted", auth_attempts=4, reason="insufficient_funds"))
-    ok &= check("halted is never recoverable", not s.should_recover)
+    ok &= check("halted is never processed", not s.should_process)
     ok &= check("no attempts remain at the cap", s.attempts_remaining == 0)
 
     s = parse_webhook(webhook("subscription.pending", auth_attempts=4, reason="insufficient_funds"))
-    ok &= check("cap reached is not recoverable even while pending", not s.should_recover)
+    ok &= check("cap reached is not processed even while pending", not s.should_process)
 
     s = parse_webhook(webhook("subscription.charged"))
-    ok &= check("charged is recognised but not recoverable", not s.should_recover)
+    ok &= check("charged is recognised but not processed", not s.should_process)
 
     # Fail-closed: an unrecognised reason is classified hard, so it reaches
-    # the policy layer (should_recover=True means "hand it to the policy",
+    # the policy layer (should_process=True means "hand it to the policy",
     # not "retry it") and policies.is_hard_decline then refuses the retry.
     s = parse_webhook(webhook("subscription.pending", reason="some_reason_razorpay_added_later"))
     ok &= check("unknown reason fails closed to hard decline",
@@ -70,6 +71,16 @@ def main():
     from domain_rules import is_hard_decline
     ok &= check("and the policy layer therefore refuses to retry it",
                 is_hard_decline(s.decline_code))
+    # The two facts are separate and must disagree here: the engine takes the
+    # signal, and no retry is permitted for it. One flag answering both is
+    # what made an unmapped reason read as recoverable while being classified
+    # hard.
+    ok &= check("an unmapped reason is still processed", s.should_process)
+    ok &= check("but no retry is permitted for it", not s.retry_permitted)
+
+    s = parse_webhook(webhook("subscription.pending", reason="mandate_revoked"))
+    ok &= check("a mapped hard decline is processed but not retryable",
+                s.should_process and not s.retry_permitted)
 
     ok &= check("unrelated events are ignored",
                 parse_webhook({"event": "payout.processed", "payload": {}}) is None)
@@ -91,7 +102,7 @@ def main():
     ok &= check("an explicit null error parses instead of crashing",
                 s is not None and s.decline_code is None)
     ok &= check("and a signal with no decline code is not recoverable",
-                not s.should_recover)
+                not s.should_process)
 
     ev = to_event(parse_webhook(webhook("subscription.pending", reason="gateway_timeout")))
     ok &= check("recoverable signal converts to an engine event",
