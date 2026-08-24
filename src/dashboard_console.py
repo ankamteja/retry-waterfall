@@ -145,6 +145,12 @@ body[data-pane="how"]      .rail .grp[data-for~="how"]      .eyebrow{color:var(-
 .hud .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:700}
 .hud .v{font-family:"Space Grotesk",sans-serif;font-size:18px;font-weight:700;
   margin-top:2px;letter-spacing:-.02em}
+.hudsrc{flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--line);
+  padding:0 var(--s6) 9px;font-size:10.5px;color:var(--dim);line-height:1.45}
+.hudsrc b{color:var(--muted);font-weight:600}
+.hudback{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.hudback:hover{filter:brightness(1.15)}
+.hudsrc.live b{color:var(--accent)}
 .navtabs{flex-shrink:0;display:flex;border-bottom:1px solid var(--line);
   background:var(--surface-2);padding:0 var(--s6);overflow-x:auto}
 .navb{all:unset;cursor:pointer;padding:10px 14px;font-size:11px;font-weight:700;
@@ -309,8 +315,13 @@ def console_body(h, st):
         <div><div class="k">Refused by compliance</div>
           <div class="v num" id="k-ref" style="color:var(--refused)">0</div></div>
         <div><div class="k">Escalated for auth</div>
-          <div class="v num" style="color:var(--attention)">{afa} payments</div></div>
+          <div class="v num" id="k-afa" style="color:var(--attention)">{afa} payments</div></div>
       </div>
+      <!-- Four numbers with no caption read as a live readout that has
+           frozen. They are one specific run, and saying which one is the
+           difference between a dead gauge and a ledger. Racing replaces
+           them and this line says so. -->
+      <div class="hudsrc" id="hudSrc"></div>
 
       <nav class="navtabs">
         <button class="navb on" data-go="decision">Decision</button>

@@ -231,6 +231,43 @@ function rcVerdict(A,B){
       'policy ran, so both sides were arguing over the same '+(60-A.stop)+'.</span>';
 }
 
+/* Move the masthead onto the race that just finished.
+   Once, at the end -- not inside the tick loop. Per payment, "revenue at
+   risk" would climb from zero, which reads as risk growing rather than as a
+   total being counted, and the masthead would flicker for six seconds next
+   to a smooth count-up. */
+function hudRace(B, batch, wiped){
+  const el=document.getElementById('hudSrc');
+  if(!el) return;
+  const risk=batch.reduce((t,p)=>t+p.amount,0);
+  const refused=batch.filter(p=>isHard(p.code)).length;
+  const escalated=batch.filter(p=>!isHard(p.code)&&requiresAFA(p.amount,p.category)).length;
+  const set=(id,v)=>{ const n=document.getElementById(id); if(n) n.textContent=v; };
+  set('k-risk', inr(Math.round(risk)));
+  set('k-rec',  inr(Math.round(B.net-B.cost)));
+  set('k-ref',  refused+' payments');
+  set('k-afa',  escalated+' payments');
+  el.classList.add('live');
+  el.innerHTML='<b>This race</b>, generated in your browser just now: '+batch.length+
+    ' payments, '+B.rec+' recovered ('+(B.rec/batch.length*100).toFixed(1)+'%), '+
+    refused+' refused, '+escalated+' escalated.'+
+    (wiped? ' The agent was racing with its beliefs wiped, so these are an '+
+            'untrained bandit\'s numbers, not the shipped policy\'s.' : '')+
+    ' <span class="hudback" role="button" tabindex="0">Show the audited run instead</span>';
+  const back=el.querySelector('.hudback');
+  const restore=()=>{
+    el.classList.remove('live');
+    el.innerHTML=window.HUD_AUDITED;
+    const st=D.stats.stages, mn=D.stats.money;
+    set('k-risk', inr(Math.round(mn.at_risk_inr)));
+    set('k-rec',  inr(Math.round(mn.net_recovered_inr)));
+    set('k-ref',  st.compliance_gate.refused+' payments');
+    set('k-afa',  st.compliance_gate.afa_escalated+' payments');
+  };
+  back.onclick=restore;
+  back.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); restore(); } };
+}
+
 function rcRace(resetBeliefs){
   clearInterval(rcTimer);
   if(resetBeliefs) rcArms=freshArms(); else if(!rcArms) rcArms=trainedArms();
@@ -242,7 +279,8 @@ function rcRace(resetBeliefs){
   $('rcVerdict').textContent='Running. Same payments, same luck, different decisions.';
 
   rcTimer=setInterval(()=>{
-    if(i>=batch.length){ clearInterval(rcTimer); rcTimer=null; rcVerdict(A,B); return; }
+    if(i>=batch.length){ clearInterval(rcTimer); rcTimer=null; rcVerdict(A,B);
+                         hudRace(B,batch,!!resetBeliefs); return; }
     const p=batch[i++], a=runBlind(p,tag), b=runAgent(p,tag);
     A.cost+=a.cost; A.msgs+=a.msgs; A.stop+=a.stopped;    if(a.gross){ A.rec++; A.net+=a.gross; }
     B.cost+=b.cost; B.msgs+=b.msgs; B.stop+=b.stopped;    if(b.gross){ B.rec++; B.net+=b.gross; }
