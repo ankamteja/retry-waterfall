@@ -152,6 +152,15 @@ body[data-pane="how"]      .rail .grp[data-for~="how"]      .eyebrow{color:var(-
   border-bottom:2px solid transparent;white-space:nowrap}
 .navb:hover{color:var(--muted)}
 .navb.on{color:var(--text);border-bottom-color:var(--accent)}
+/* The explanation card. Its chip row reuses .navtabs for the look, which
+   carries none of the spacing a wrapped row of chips needs, and the
+   paragraph had no measure at all -- at this card width a line ran past 120
+   characters and the block read as one dense slab. */
+#tabs{gap:8px;flex-wrap:wrap;margin-bottom:var(--s6);overflow-x:visible}
+.expcard{max-width:900px}
+.exp{min-height:118px}
+.exp-h{margin-bottom:var(--s4)}
+.exp-t{max-width:70ch;line-height:1.8}
 .panes{flex:1;overflow-y:auto;padding:var(--s6);min-height:0}
 [data-tab]{display:none} [data-tab].show{display:block}
 .log{flex-shrink:0;height:104px;overflow-y:auto;border-top:1px solid var(--line);
@@ -451,7 +460,7 @@ def console_body(h, st):
             <p class="psub">Committed with the repo so the page needs no key. With the server running, a
               model writes one live for each decision on the Decision tab instead.</p>
           </div>
-          <div class="card pad">
+          <div class="card pad expcard">
             <div class="navtabs" id="tabs" style="background:none;border:0;padding:0"></div>
             <div class="exp" id="exp"></div>
           </div>
