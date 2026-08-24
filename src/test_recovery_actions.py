@@ -58,6 +58,64 @@ class TestGuards(unittest.TestCase):
                             attempt_number=MAX_ATTEMPTS_PER_CYCLE + 1, window_hours=24,
                             channel="sms", rationale="x")
 
+    def test_attempt_below_the_first_retry_is_refused(self):
+        """Attempt 1 is the original debit, so a contact cannot belong to it,
+        and 0 and -1 are not attempts at all. An unbounded lower end let all
+        three through while still reading as 'within the cap'."""
+        for attempt in (1, 0, -1):
+            with self.subTest(attempt=attempt), self.assertRaises(ComplianceViolation):
+                self.ex.contact("pay_low", 500.0, "subscription",
+                                DeclineCode.INSUFFICIENT_FUNDS, attempt_number=attempt,
+                                window_hours=24, channel="sms", rationale="x")
+
+    def test_cap_binds_across_calls_on_one_payment(self):
+        """The cap is a per-payment fact. A guard that only validates the
+        attempt number it is handed enforces nothing, because the caller
+        picks that number -- this used to allow unlimited contacts."""
+        for attempt, window in zip((2, 3, 4), (24, 72, 168)):
+            self.ex.contact("pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=attempt, window_hours=window,
+                            channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 3)
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=4, window_hours=168, channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 3)
+
+    def test_the_same_attempt_cannot_be_contacted_twice(self):
+        """Re-sending attempt 2 on three different windows is three contacts
+        against a three-contact cap, which the old ceiling check accepted."""
+        self.ex.contact("pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                        attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=72, channel="sms", rationale="x")
+
+    def test_attempts_do_not_move_backwards(self):
+        self.ex.contact("pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                        attempt_number=3, window_hours=72, channel="sms", rationale="x")
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="sms", rationale="x")
+
+    def test_a_refused_contact_does_not_consume_an_attempt(self):
+        """A blocked call must not spend one of the payment's three slots,
+        or a bad channel would silently cost a legitimate retry."""
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="whatsapp", rationale="x")
+        for attempt, window in zip((2, 3, 4), (24, 72, 168)):
+            self.ex.contact("pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=attempt, window_hours=window,
+                            channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 3)
+
+    def test_the_cap_is_per_payment_not_global(self):
+        for payment in ("pay_a", "pay_b", "pay_c", "pay_d"):
+            self.ex.contact(payment, 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 4)
+
     def test_unmandated_retry_window_is_refused(self):
         """T+48h is not one of NPCI's windows. A policy inventing its own
         schedule is exactly what this project claims never to do."""

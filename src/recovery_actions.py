@@ -56,6 +56,12 @@ from domain_rules import (
 
 RAZORPAY_API_BASE = "https://api.razorpay.com/v1"
 
+# Attempt 1 is the original auto-debit the bank already declined, so the
+# first attempt a recovery contact can belong to is 2. The last is the NPCI
+# cap itself, which makes MAX_RETRY_CONTACTS_PER_CYCLE contacts in a cycle.
+MIN_RETRY_ATTEMPT = 2
+MAX_RETRY_CONTACTS_PER_CYCLE = MAX_ATTEMPTS_PER_CYCLE - MIN_RETRY_ATTEMPT + 1
+
 # How long an authenticated recovery link stays valid. Chosen to match the
 # outer edge of the NPCI retry schedule (T+7d) so the link and the mandate
 # cycle expire together rather than leaving a live payment URL behind after
@@ -140,6 +146,14 @@ class RecoveryExecutor:
         self._file = open(path, "w", encoding="utf-8") if path else None
         self._callback_base_url = callback_base_url
         self.actions: list[RecoveryAction] = []
+        # payment_id -> the attempt numbers already contacted on it. The cap
+        # is a per-payment fact, so a guard that only validates the number it
+        # is handed cannot enforce it; this is the memory that lets it.
+        #
+        # The ledger lives on the executor, so it covers one cycle of one
+        # process. A deployment that spans processes has to back this with a
+        # durable store, or the cap stops binding at the process boundary.
+        self._contacts_by_payment: dict[str, list[int]] = {}
 
     # -- the seam ---------------------------------------------------------
 
@@ -156,8 +170,8 @@ class RecoveryExecutor:
 
     # -- guards -----------------------------------------------------------
 
-    def _guard_contactable(self, decline_code, amount_inr: float, category: str,
-                           attempt_number: int, window_hours: int) -> None:
+    def _guard_contactable(self, payment_id: str, decline_code, amount_inr: float,
+                           category: str, attempt_number: int, window_hours: int) -> None:
         """Re-derive, from domain_rules alone, that contacting this customer
         on this attempt is permitted. Deliberately does not consult the
         policy layer's opinion."""
@@ -170,9 +184,34 @@ class RecoveryExecutor:
                 f"INR {amount_inr:,.2f} in category '{category}' is above the RBI AFA threshold: "
                 f"requires an authenticated link, not a silent retry"
             )
-        if attempt_number > MAX_ATTEMPTS_PER_CYCLE:
+        # Bounded on both sides. An unbounded lower end let attempt 0 and
+        # attempt -1 through, and both read as "within the cap" to every
+        # check that only compares against the ceiling.
+        if not MIN_RETRY_ATTEMPT <= attempt_number <= MAX_ATTEMPTS_PER_CYCLE:
             raise ComplianceViolation(
-                f"attempt {attempt_number} exceeds the NPCI cap of {MAX_ATTEMPTS_PER_CYCLE} per cycle"
+                f"attempt {attempt_number} is outside the retry range "
+                f"{MIN_RETRY_ATTEMPT}..{MAX_ATTEMPTS_PER_CYCLE}: attempt 1 is the "
+                f"original debit and the NPCI cap is {MAX_ATTEMPTS_PER_CYCLE} per cycle"
+            )
+
+        # The cap counts contacts actually made on this payment, not the
+        # number the caller claims to be on.
+        already = self._contacts_by_payment.get(payment_id, [])
+        if len(already) >= MAX_RETRY_CONTACTS_PER_CYCLE:
+            raise ComplianceViolation(
+                f"{payment_id} has already been contacted {len(already)} times this cycle "
+                f"(attempts {already}): the NPCI cap of {MAX_ATTEMPTS_PER_CYCLE} allows "
+                f"{MAX_RETRY_CONTACTS_PER_CYCLE} recovery contacts"
+            )
+        if attempt_number in already:
+            raise ComplianceViolation(
+                f"{payment_id} was already contacted on attempt {attempt_number}: "
+                f"one contact per attempt"
+            )
+        if already and attempt_number < already[-1]:
+            raise ComplianceViolation(
+                f"{payment_id} is on attempt {attempt_number} after attempt {already[-1]}: "
+                f"attempts within a cycle only move forward"
             )
         if window_hours not in RETRY_WINDOWS_HOURS:
             raise ComplianceViolation(
@@ -192,10 +231,15 @@ class RecoveryExecutor:
         separation is why the channel is a learned decision and the timing
         never is.
         """
-        self._guard_contactable(decline_code, amount_inr, category, attempt_number, window_hours)
+        self._guard_contactable(payment_id, decline_code, amount_inr, category,
+                                attempt_number, window_hours)
         kind = CHANNEL_TO_ACTION.get(channel)
         if kind is None:
             raise ComplianceViolation(f"unknown contact channel '{channel}'")
+
+        # Recorded only once the guard and the channel have both passed, so a
+        # refused call never consumes one of the payment's three attempts.
+        self._contacts_by_payment.setdefault(payment_id, []).append(attempt_number)
 
         return self._emit(RecoveryAction(
             payment_id=payment_id,
