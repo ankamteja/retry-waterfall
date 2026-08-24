@@ -24,7 +24,8 @@ import statistics
 
 from domain_rules import RETRY_WINDOWS_HOURS, is_hard_decline, requires_additional_factor_auth
 from synthetic_data import generate_batch, recovery_probability
-from policies import BaselinePolicy, BanditPolicy, OraclePolicy, CHANNEL_COST_INR
+from policies import (BaselinePolicy, BanditPolicy, OraclePolicy,
+                      CHANNEL_COST_INR, PRE_DEBIT_NOTICE_COST_INR)
 from audit_log import AuditLog, AuditRecord
 from recovery_actions import DryRunExecutor, RecoveryExecutor
 
@@ -126,11 +127,21 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None,
                         window_hours=window_hours, channel=None, amount_inr=event.amount_inr,
                         expected_net_inr=decision.expected_net_inr, rationale=decision.rationale,
                         recovered=None,
-                        stopping_rule="npci_retry_cap_exhausted" if is_last_window else None,
+                        # A policy declining a window it was allowed to use is
+                        # not the NPCI cap running out. Labelling it that way
+                        # blamed the regulation for the agent's own arithmetic.
+                        stopping_rule="policy_declined_all_windows" if is_last_window else None,
                     ))
                 continue
 
+            # The notice is owed before the debit, and it is owed by every
+            # policy: no policy is allowed to compete by skipping it.
             if executor:
+                executor.notify_pre_debit(
+                    payment_id=event.payment_id, amount_inr=event.amount_inr,
+                    category=event.category, decline_code=event.decline_code,
+                    attempt_number=attempt_number, window_hours=window_hours,
+                )
                 executor.contact(
                     payment_id=event.payment_id, amount_inr=event.amount_inr,
                     category=event.category, decline_code=event.decline_code,
@@ -141,7 +152,7 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None,
             true_p = recovery_probability(event.decline_code, window_hours, decision.channel)
             success = outcome_draw(seed, event.payment_id, window_hours, decision.channel) < true_p
             policy.update(event.decline_code, window_hours, decision.channel, success)
-            total_cost += CHANNEL_COST_INR[decision.channel]
+            total_cost += CHANNEL_COST_INR[decision.channel] + PRE_DEBIT_NOTICE_COST_INR
 
             if audit_log:
                 audit_log.write(AuditRecord(
@@ -176,7 +187,7 @@ def run_policy_on_batch(policy, events, seed, audit_log: AuditLog | None = None,
         "recovered_count": recovered_count,
         "recovery_rate": recovered_count / len(events) if events else 0.0,
         "gross_recovered_inr": round(total_gross, 2),
-        "total_channel_cost_inr": round(total_cost, 2),
+        "total_contact_cost_inr": round(total_cost, 2),
         "net_recovered_inr": round(total_gross - total_cost, 2),
         "cost_per_recovery_inr": round(total_cost / recovered_count, 2) if recovered_count else None,
         "exceptions": exceptions,

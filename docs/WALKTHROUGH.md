@@ -200,12 +200,12 @@ the lift that is actually achievable.
 
 | Policy | Recovery | Net recovered | Cost per win |
 |---|---|---|---|
-| Baseline, retry everything by SMS | 37.16% | Rs 261,660 | Rs 0.55 |
-| **This agent** | **39.11%** | **Rs 273,858** | Rs 14.63 |
-| Oracle, perfect information | 40.78% | Rs 285,540 | Rs 25.47 |
+| Baseline, retry everything by SMS | 37.16% | Rs 261,648 | Rs 1.11 |
+| **This agent** | **39.11%** | **Rs 273,846** | Rs 15.14 |
+| Oracle, perfect information | 40.78% | Rs 285,529 | Rs 25.95 |
 
 - Captures **51.1% of the achievable lift**.
-- Paired lift **+Rs 12,197 per batch**, 95% CI **+6,330 to +18,065**.
+- Paired lift **+Rs 12,198 per batch**, 95% CI **+6,330 to +18,065**.
 - Wins **126 of 200 batches**. It loses 74, and the interface says so.
 
 ### Three mechanisms make the number honest
@@ -234,15 +234,18 @@ scored including payments it is legally forbidden to pursue.
 | Component | Status |
 |---|---|
 | NPCI cap, retry windows, RBI thresholds | **Sourced regulation**, verifiable against published circulars. |
-| Razorpay webhook shapes, lifecycle, error taxonomy | **Verified** against Razorpay's public docs. 15 tests against real payload shapes. |
+| Razorpay webhook shapes, lifecycle, error taxonomy | **Verified** against Razorpay's public docs. 18 tests against real payload shapes. |
 | Recovery probabilities | **Assumptions.** Real Razorpay outcome data is not public. Labelled as assumptions in their own file. |
 | The 51.1% of oracle | **Measured inside that simulator.** If real channel differences are smaller, there is less to capture. |
 | The adapter | **Tested, not deployed.** Never run against a live Razorpay test-mode account. |
 | The outbound executor | **Builds the exact call and does not send it.** No code path in the repository transmits. |
 | Payment-link conversion | **Not modelled.** Escalated payments count as non-recoveries, which is conservative. |
 
-`domain_rules.py` encodes regulation as checked on 2026-08-22. NPCI and RBI
-update circulars periodically; the figures should be re-verified before any
+The RBI constants in `domain_rules.py` -- the AFA thresholds and the 24-hour
+pre-debit notification -- come from the **RBI Digital Payments -- E-mandate Framework, 2026** (notified 21 April 2026), which consolidates the earlier e-mandate circulars into one set of
+directions. The NPCI 4-attempt cap is an NPCI operating rule and no circular
+number is cited for it, which makes it the weakest-sourced constant in the
+file. NPCI and RBI update these periodically, so re-verify before any
 production use.
 
 ---
@@ -287,8 +290,8 @@ python3 eval_harness.py          # ~2 min, 200 seeds
 python3 pipeline_stats.py
 python3 generate_dashboard.py    # builds data/dashboard.html
 
-python3 test_razorpay_adapter.py # 15 tests, no network
-python3 test_recovery_actions.py # 22 tests, no network
+python3 test_razorpay_adapter.py # 18 tests, no network
+python3 test_recovery_actions.py # 36 tests, no network
 ```
 
 Open `data/dashboard.html` in any browser. Fonts, Three.js and the force-graph

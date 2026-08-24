@@ -25,8 +25,13 @@ second, independent gate on the only step that can touch a customer, so a
 future policy bug cannot silently turn into an outbound contact. The
 `bounded` in "bounded recovery workflow" is enforced here, not assumed.
 
-Five terminal actions, one per branch the engine can reach:
+Six actions. One per branch the engine can reach, plus the notice the law
+adds to any branch that debits:
 
+    send_pre_debit_alert       owed to the customer at least 24h before a
+                               collection attempt. Not a recovery tactic and
+                               not the agent's choice: contacting is refused
+                               on an attempt with no notice on record
     send_sms                   soft decline, bandit picked SMS
     place_ivr_call             soft decline, bandit picked IVR
     create_auth_payment_link   over the RBI AFA threshold: a silent retry
@@ -50,6 +55,7 @@ from enum import Enum
 
 from domain_rules import (
     MAX_ATTEMPTS_PER_CYCLE,
+    PRE_DEBIT_NOTICE_HOURS,
     RETRY_WINDOWS_HOURS,
     is_hard_decline,
     requires_additional_factor_auth,
@@ -100,10 +106,26 @@ class ContactLedger:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._attempts: dict[str, list[int]] = {}
+        # (payment_id, attempt_number) pairs that have had their mandated
+        # pre-debit notice sent. A contact cannot precede its own notice.
+        self._notified: set[tuple[str, int]] = set()
 
     def attempts_for(self, payment_id: str) -> list[int]:
         with self._lock:
             return list(self._attempts.get(payment_id, []))
+
+    def record_notice(self, payment_id: str, attempt_number: int) -> None:
+        with self._lock:
+            self._notified.add((payment_id, attempt_number))
+
+    def was_notified(self, payment_id: str, attempt_number: int) -> bool:
+        with self._lock:
+            return (payment_id, attempt_number) in self._notified
+
+    def discard_notice(self, payment_id: str, attempt_number: int) -> None:
+        """For a notice that was recorded and then never actually sent."""
+        with self._lock:
+            self._notified.discard((payment_id, attempt_number))
 
     def reserve(self, payment_id: str, attempt_number: int) -> None:
         """Consume one attempt for this payment, or raise and consume none."""
@@ -148,6 +170,7 @@ AUTH_LINK_TTL_HOURS = RETRY_WINDOWS_HOURS[-1]
 
 
 class ActionKind(str, Enum):
+    SEND_PRE_DEBIT_ALERT = "send_pre_debit_alert"
     SEND_SMS = "send_sms"
     PLACE_IVR_CALL = "place_ivr_call"
     CREATE_AUTH_PAYMENT_LINK = "create_auth_payment_link"
@@ -160,10 +183,15 @@ CHANNEL_TO_ACTION = {
     "ivr_call": ActionKind.PLACE_IVR_CALL,
 }
 
-# Which actions put something in front of a customer. Only these consume a
-# contact budget and only these are guarded on the mandate rules; the other
-# two are internal bookkeeping.
+# Which actions put something in front of a customer. All of these are
+# guarded on the mandate rules; the other two are internal bookkeeping.
+#
+# Reaching a customer and spending a regulated attempt are not the same
+# thing. The pre-debit notice reaches one and spends none: it is owed on an
+# attempt rather than chosen, so counting it against the NPCI cap would let
+# a legal obligation eat a legal retry. Only the ledger decides the cap.
 CONTACT_ACTIONS = {
+    ActionKind.SEND_PRE_DEBIT_ALERT,
     ActionKind.SEND_SMS,
     ActionKind.PLACE_IVR_CALL,
     ActionKind.CREATE_AUTH_PAYMENT_LINK,
@@ -272,12 +300,91 @@ class RecoveryExecutor:
         # This subsumes the old "is this one of the mandated windows" check:
         # every value it can accept is drawn from RETRY_WINDOWS_HOURS, so a
         # separate membership test after it could never fire.
+        # The framework owes the customer notice before the debit, so a
+        # contact that arrives without one is not a permitted contact. This
+        # was documented in domain_rules and enforced nowhere.
+        if not self.ledger.was_notified(payment_id, attempt_number):
+            raise ComplianceViolation(
+                f"{payment_id} attempt {attempt_number}: no pre-debit notice on record. "
+                f"The customer is owed {PRE_DEBIT_NOTICE_HOURS}h notice before the "
+                f"collection, so notify_pre_debit() has to precede the contact"
+            )
+
         expected = ATTEMPT_TO_WINDOW_HOURS[attempt_number]
         if window_hours != expected:
             raise ComplianceViolation(
                 f"attempt {attempt_number} is the T+{expected}h retry, not T+{window_hours}h. "
                 f"The mandated windows are {RETRY_WINDOWS_HOURS} and NPCI fixes which "
                 f"attempt lands in which -- the agent chooses the channel, never the timing"
+            )
+
+    # -- the mandated notice ----------------------------------------------
+
+    def notify_pre_debit(self, payment_id: str, amount_inr: float, category: str,
+                         decline_code, attempt_number: int, window_hours: int) -> RecoveryAction:
+        """Send the notice the customer is owed before a collection attempt.
+
+        This is not a recovery tactic and the agent does not get to decide
+        whether to send it. It is owed on any attempt that will actually
+        debit, which is why it hangs off the attempt and not off the window:
+        a window the agent declines to use produces no debit and owes no
+        notice, so declining stays free.
+
+        It is deliberately not modelled as changing whether the customer
+        pays. Doing that would mean inventing recovery probabilities for a
+        world this project has never measured, and every number downstream
+        of those probabilities would then be fiction.
+        """
+        self._guard_notifiable(payment_id, decline_code, amount_inr, category,
+                               attempt_number, window_hours)
+        self.ledger.record_notice(payment_id, attempt_number)
+        try:
+            return self._emit(RecoveryAction(
+                payment_id=payment_id,
+                kind=ActionKind.SEND_PRE_DEBIT_ALERT,
+                amount_inr=amount_inr,
+                reason=(f"mandated notice, {PRE_DEBIT_NOTICE_HOURS}h before the "
+                        f"T+{window_hours}h collection attempt"),
+                authorised_by="rbi_e_mandate_pre_debit_notice",
+                provider="comms",
+                request={
+                    "channel": "sms",
+                    "template": f"pre_debit_notice_t{window_hours}h",
+                    "variables": {
+                        "amount_inr": round(amount_inr, 2),
+                        "notice_hours": PRE_DEBIT_NOTICE_HOURS,
+                        "retry_window_hours": window_hours,
+                        "attempt_number": attempt_number,
+                    },
+                    "recipient_ref": payment_id,
+                },
+                attempt_number=attempt_number,
+                window_hours=window_hours,
+                dry_run=self.dry_run,
+            ))
+        except Exception:
+            self.ledger.discard_notice(payment_id, attempt_number)
+            raise
+
+    def _guard_notifiable(self, payment_id: str, decline_code, amount_inr: float,
+                          category: str, attempt_number: int, window_hours: int) -> None:
+        """A notice announces a debit, so it is only owed where a debit is
+        permitted. Sending one for a revoked mandate would tell the customer
+        their account is about to be charged when it is not."""
+        if is_hard_decline(decline_code):
+            raise ComplianceViolation(
+                f"{decline_code.value} is a hard decline: no collection attempt follows, "
+                f"so no pre-debit notice is owed"
+            )
+        if not MIN_RETRY_ATTEMPT <= attempt_number <= MAX_ATTEMPTS_PER_CYCLE:
+            raise ComplianceViolation(
+                f"attempt {attempt_number} is outside the retry range "
+                f"{MIN_RETRY_ATTEMPT}..{MAX_ATTEMPTS_PER_CYCLE}"
+            )
+        if window_hours != ATTEMPT_TO_WINDOW_HOURS[attempt_number]:
+            raise ComplianceViolation(
+                f"attempt {attempt_number} is the "
+                f"T+{ATTEMPT_TO_WINDOW_HOURS[attempt_number]}h retry, not T+{window_hours}h"
             )
 
     # -- the five branches ------------------------------------------------

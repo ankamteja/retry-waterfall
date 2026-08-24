@@ -32,6 +32,7 @@ import json
 
 from domain_rules import (
     AFA_ENHANCED_CATEGORIES,
+    PRE_DEBIT_NOTICE_HOURS,
     AFA_TRIGGER_ENHANCED_INR,
     AFA_TRIGGER_GENERAL_INR,
     HARD_DECLINES,
@@ -39,7 +40,7 @@ from domain_rules import (
     RETRY_WINDOWS_HOURS,
     SOFT_DECLINES,
 )
-from policies import CHANNEL_COST_INR, CHANNELS
+from policies import CHANNEL_COST_INR, CHANNELS, PRE_DEBIT_NOTICE_COST_INR
 from recovery_actions import AUTH_LINK_TTL_HOURS, RAZORPAY_API_BASE
 from synthetic_data import (
     AMOUNT_RANGE_INR,
@@ -104,6 +105,8 @@ def live_constants(posteriors: list[dict]) -> str:
         "hard": sorted(c.value for c in HARD_DECLINES),
         "channels": CHANNELS,
         "channelCost": CHANNEL_COST_INR,
+        "preDebitNoticeCost": PRE_DEBIT_NOTICE_COST_INR,
+        "preDebitNoticeHours": PRE_DEBIT_NOTICE_HOURS,
         "categories": CATEGORIES,
         "amountRange": list(AMOUNT_RANGE_INR),
         "declineMix": {c.value: w for c, w in DEFAULT_DECLINE_DISTRIBUTION.items()},
@@ -182,7 +185,10 @@ function trueP(code,w,ch){
 function choose(code,w,amount){
   const opts=E.channels.map(ch=>{
     const a=arm(code,w,ch), p=betaSample(a.a,a.b);
-    return {channel:ch, p:p, net:p*amount-E.channelCost[ch], pulls:a.pulls};
+    /* Mirrors policies.py: the notice is part of what an attempt costs,
+       cancels between the two channels, and does not cancel against not
+       attempting. */
+    return {channel:ch, p:p, net:p*amount-E.channelCost[ch]-E.preDebitNoticeCost, pulls:a.pulls};
   });
   const best=opts.reduce((m,o)=>o.net>m.net?o:m, opts[0]);
   return {options:opts, best:best, attempt:best.net>0};
@@ -257,7 +263,7 @@ function runPayment(p){
       attempts.push({window:w, attempt:n, skipped:true, options:d.options, best:d.best});
       continue;
     }
-    trace.costs+=E.channelCost[d.best.channel];
+    trace.costs+=E.channelCost[d.best.channel]+E.preDebitNoticeCost;
     const tp=trueP(p.code,w,d.best.channel), hit=Math.random()<tp;
     attempts.push({window:w, attempt:n, skipped:false, options:d.options,
                    best:d.best, trueP:tp, won:hit});
@@ -321,6 +327,10 @@ function contactAction(p,a){
     kind:a.best.channel==='sms'?'send_sms':'place_ivr_call', provider:'comms',
     authorised_by:'soft_decline_within_npci_cap (attempt '+a.attempt+'/'+E.maxAttempts+')',
     text:'A nudge, not a charge. It does not move money: it makes the customer ready for the debit NPCI has already scheduled.',
+    notice:{kind:'send_pre_debit_alert', authorised_by:'rbi_e_mandate_pre_debit_notice',
+      text:'Owed to the customer '+E.preDebitNoticeHours+'h before this collection. Not the '+
+           'agent\'s decision and not a recovery tactic: the executor refuses to contact on an '+
+           'attempt that has no notice on record.'},
     request:{channel:a.best.channel, template:'recovery_'+p.code+'_t'+a.window+'h',
       variables:{amount_inr:p.amount, retry_window_hours:a.window, attempt_number:a.attempt},
       recipient_ref:p.id}
@@ -446,6 +456,11 @@ LIVE_CSS = r"""
 .pill.none{background:rgba(255,255,255,.07);color:var(--dim);}
 .pill.dry{background:rgba(232,184,109,.15);color:var(--attention);}
 .callbody{padding:12px 13px;font-size:.86rem;color:var(--muted);}
+.pill.mand{background:rgba(232,184,109,.15);color:var(--attention);}
+/* The mandated notice sits above the contact it announces, marked off so
+   it never reads as one of the agent's own decisions. */
+.callbody.notice{border-bottom:1px solid var(--line);
+  background:repeating-linear-gradient(135deg,rgba(232,184,109,.05) 0 6px,transparent 6px 12px);}
 .callbody pre{margin:10px 0 0;padding:11px;background:#070A12;border-radius:7px;overflow-x:auto;
   font-family:"JetBrains Mono",monospace;font-size:.72rem;line-height:1.55;color:#B8C4DC;}
 
@@ -676,7 +691,16 @@ function callBox(action){
       ? '<span class="pill rzp">Razorpay API</span>'
       : action.provider==='comms' ? '<span class="pill comms">Comms provider</span>'
       : '<span class="pill none">No call</span>';
-  let body='<div class="callbody">'+action.text;
+  /* The mandated notice comes first, because it did. Showing only the
+     contact would put the page back where the code was before the notice
+     was enforced: claiming it in prose and never sending it. */
+  let body='';
+  if(action.notice){
+    body+='<div class="callbody notice"><span class="pill mand">mandated</span> '
+       +  '<span class="mono" style="color:var(--attention)">'+action.notice.kind+'</span>'
+       +  '<div style="margin-top:6px">'+action.notice.text+'</div></div>';
+  }
+  body+='<div class="callbody">'+action.text;
   if(action.request && action.request.url){
     body+='<pre>curl -X '+action.request.method+' '+action.request.url+" \\\n"+
       "  -u $RAZORPAY_KEY_ID:$RAZORPAY_KEY_SECRET \\\n"+

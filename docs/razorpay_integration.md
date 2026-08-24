@@ -159,6 +159,6 @@ raises `ComplianceViolation` rather than trusting the caller.
 
 ## What has not been done
 
-The adapter is tested against real payload *shapes* — 15 tests in
+The adapter is tested against real payload *shapes* — 18 tests in
 `src/test_razorpay_adapter.py`, no network needed — but it has never run
 against a live Razorpay test-mode account. Say so before a judge asks.

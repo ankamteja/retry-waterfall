@@ -61,7 +61,7 @@ def build(policy: str = "bandit", seed: int = 0) -> dict:
             entry["gross_inr"] += win["amount_inr"]
 
     by_channel = defaultdict(lambda: {"attempts": 0, "wins": 0, "cost_inr": 0.0, "gross_inr": 0.0})
-    from policies import CHANNEL_COST_INR
+    from policies import CHANNEL_COST_INR, PRE_DEBIT_NOTICE_COST_INR
     for r in attempted:
         entry = by_channel[r["channel"]]
         entry["attempts"] += 1
@@ -78,7 +78,11 @@ def build(policy: str = "bandit", seed: int = 0) -> dict:
             entry["wins"] += 1
 
     gross = sum(r["amount_inr"] for r in records if r["recovered"])
-    cost = sum(CHANNEL_COST_INR[r["channel"]] for r in attempted)
+    # Every attempt also owes the mandated pre-debit notice, and the
+    # evaluation charges it, so this has to charge it too or the two
+    # published cost figures disagree with each other.
+    cost = sum(CHANNEL_COST_INR[r["channel"]] + PRE_DEBIT_NOTICE_COST_INR
+               for r in attempted)
     at_risk = sum(next(r for r in records if r["payment_id"] == pid)["amount_inr"] for pid in payments)
 
     return {
@@ -94,7 +98,7 @@ def build(policy: str = "bandit", seed: int = 0) -> dict:
         "money": {
             "at_risk_inr": round(at_risk, 2),
             "gross_recovered_inr": round(gross, 2),
-            "channel_cost_inr": round(cost, 2),
+            "contact_cost_inr": round(cost, 2),
             "net_recovered_inr": round(gross - cost, 2),
         },
         "by_decline_code": {k: dict(v) for k, v in by_code.items()},

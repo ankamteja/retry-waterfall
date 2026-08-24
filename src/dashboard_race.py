@@ -148,7 +148,7 @@ function runBlind(p,tag){
   let cost=0,msgs=0,gross=0;
   for(let i=0;i<E.windows.length;i++){
     const w=E.windows[i];
-    cost+=E.channelCost['sms']; msgs++;
+    cost+=E.channelCost['sms']+E.preDebitNoticeCost; msgs++;
     if(hashU(tag+'|'+p.id+'|'+w+'|sms')<trueP(p.code,w,'sms')){ gross=p.amount; break; }
   }
   return {cost:cost,msgs:msgs,gross:gross,stopped:0};
@@ -165,7 +165,7 @@ function runAgent(p,tag){
       if(!best||net>best.net) best={ch:ch,net:net,k:k};
     });
     if(best.net<=0) continue;
-    cost+=E.channelCost[best.ch]; msgs++;
+    cost+=E.channelCost[best.ch]+E.preDebitNoticeCost; msgs++;
     const won=hashU(tag+'|'+p.id+'|'+w+'|'+best.ch)<trueP(p.code,w,best.ch);
     rcUpdate(best.k,won);
     if(won){ gross=p.amount; break; }

@@ -48,10 +48,22 @@ customer before each one.
 
 A contextual bandit picks the channel, SMS or an IVR call, conditioned on
 why the payment failed and which window we are in. An IVR call converts
-better and costs about fifty times more. On a Rs 200 subscription it costs
-more than the payment is worth. On a Rs 20,000 one it obviously does not.
-The bandit will also skip an attempt entirely when the expected recovery
-does not cover the message.
+better and costs about fifty times more.
+
+The comparison that decides it is not the call against the payment. It is
+the call against the *extra* recovery it buys over an SMS, which is Rs 7.85
+of extra cost against a few points of extra probability. That crossover sits
+between **Rs 89 and Rs 349** depending on why the payment failed and which
+window it is in, and it is computed, not asserted. The bandit also declines
+an attempt outright when even an SMS plus the mandated notice costs more
+than the attempt is expected to return.
+
+Be exact about what that buys, because the honest version is still good:
+across this batch's amount range most payments clear every crossover, so the
+agent upgrades to a call most of the time. The cost-awareness is real
+arithmetic rather than a slogan, but in this environment it earns its keep
+as a floor guard on small payments rather than as a channel it switches away
+from often.
 
 Say the strong version out loud: "our AI decides when to retry" invites the
 question, what if it decides wrong. "Regulation decides when, the AI only
@@ -91,12 +103,12 @@ the ceiling.
 
 Over 60 events across 200 independent seeds:
 
-- Baseline, retry everything by SMS: 37.16 percent recovered, Rs 261,660 net
-- This project: 39.11 percent, Rs 273,858 net
-- Oracle, perfect information: 40.78 percent, Rs 285,540 net
+- Baseline, retry everything by SMS: 37.16 percent recovered, Rs 261,648 net
+- This project: 39.11 percent, Rs 273,846 net
+- Oracle, perfect information: 40.78 percent, Rs 285,529 net
 
 The bandit captures **51.1 percent of the achievable lift**. Paired lift over
-baseline is **plus Rs 12,197 per batch**, 95 percent confidence interval plus
+baseline is **plus Rs 12,198 per batch**, 95 percent confidence interval plus
 6,330 to plus 18,065. It beat the baseline in **126 of 200 batches**.
 
 Not always. Say that part out loud. A number that is visibly not perfect is

@@ -34,18 +34,22 @@ Two properties of that edge matter more than the calls themselves:
 
 - **It is dry run only. No live send path exists in the repository.** `RecoveryExecutor._dispatch` raises `NotImplementedError`. Nothing transmits, which is why the repo ships no credentials and why every request body stays reviewable as data.
 - **It re-derives its own authorisation rather than trusting the caller.** Every emit re-checks the NPCI and RBI rules from `domain_rules` and raises `ComplianceViolation` instead of producing an action. The policy layer has already refused these cases, so the guard should never fire -- that is the point. It is a second, independent gate on the only step in the system that can touch a customer. See `docs/razorpay_integration.md` for which payloads are verified and which are illustrative.
+- **The attempt cap is counted, not asserted.** A `ContactLedger` records the attempts actually contacted per payment and hands them out through an atomic reservation, so the NPCI cap binds even when the caller is wrong about which attempt it is on. A refused or failed contact releases its reservation, and the server holds one long-lived ledger, so replaying the same webhook is refused instead of re-sent.
+- **The customer is notified before the debit.** The framework requires a pre-transaction notification at least 24 hours ahead of a collection. The executor emits it as an action and refuses to contact on an attempt with no notice on record. It hangs off the attempt rather than the window, so declining to attempt stays free; it does not count against the NPCI cap, because a legal obligation should not eat a legal retry; and it is deliberately not modelled as changing recovery probabilities, since this project has never measured a world with one and inventing those numbers would make everything downstream of them fiction.
 
 ## The key design decision
 
 **The AI never chooses retry timing.** Timing is fixed by NPCI regulation: T+24h, T+72h, T+7d, 4 attempts maximum. Both the baseline and the bandit follow that identical schedule.
 
-The learned component chooses only the contact channel (SMS vs IVR call) and decides whether the attempt is worth making at all, net of channel cost. SMS costs Rs 0.15; an IVR call costs Rs 8.00. On a Rs 200 subscription an IVR call can cost more than the payment is worth; on a Rs 20,000 one it is obviously justified. The bandit learns which channel wins for each (decline code, retry window) context and converts sampled success probability into expected net rupees before acting.
+The learned component chooses only the contact channel (SMS vs IVR call) and decides whether the attempt is worth making at all, net of cost. SMS costs Rs 0.15; an IVR call costs Rs 8.00.
+
+The comparison that decides it is not the call against the payment -- it is the call against the *extra* recovery it buys over an SMS: Rs 7.85 more, for a few points more probability. That crossover is computed from the same tables the simulator draws from and sits between **Rs 89 and Rs 349** depending on the decline reason and the window (the full table is in `docs/EXPLAINER.md`). Amounts here are drawn uniform(Rs 200, Rs 25,000), so most payments clear most crossovers and the bandit upgrades to a call on the large majority of decisions. The arithmetic is genuinely performed rather than decorative, but in this environment it works as a guard on the small-payment tail, not as a channel the agent often switches away from.
 
 This is the strongest compliance story in the project. "Our AI decides when to retry" invites the question of what happens when it decides wrong. "Regulation decides when; the AI only decides how to reach you" does not.
 
 ## How it maps onto Razorpay's real API
 
-The adapter (`src/razorpay_adapter.py`, 15 passing tests) consumes three Razorpay subscription webhooks:
+The adapter (`src/razorpay_adapter.py`, 18 passing tests) consumes three Razorpay subscription webhooks:
 
 - **`subscription.pending`** -- a charge failed; the recovery window opens.
 - **`subscription.halted`** -- retries exhausted; escalate to a human.
@@ -73,13 +77,13 @@ This project fixes that with three mechanisms:
 
 | Policy | Recovery rate | Net recovered (Rs) |
 |---|---|---|
-| Baseline (always SMS) | 37.16% | 261,660 |
-| Bandit (this project) | 39.11% | 273,858 |
-| Oracle (perfect information) | 40.78% | 285,540 |
+| Baseline (always SMS) | 37.16% | 261,648 |
+| Bandit (this project) | 39.11% | 273,846 |
+| Oracle (perfect information) | 40.78% | 285,529 |
 
 The bandit captures **51.1%** of the achievable lift over baseline (oracle = 100%).
 
-Paired lift over baseline: **+Rs 12,197/batch** (95% CI +6,330 to +18,065). The bandit beats the baseline in **126 out of 200 batches**.
+Paired lift over baseline: **+Rs 12,198/batch** (95% CI +6,330 to +18,065). The bandit beats the baseline in **126 out of 200 batches**.
 
 ## Quickstart
 
@@ -91,8 +95,8 @@ python3 pipeline_stats.py        # roll up the audit trail into stage breakdowns
 python3 explain_exceptions.py    # LLM explanations (or --offline for templates)
 python3 generate_dashboard.py    # build data/dashboard.html
 
-python3 test_razorpay_adapter.py # 15 tests, no network needed
-python3 test_recovery_actions.py # 22 tests, no network needed
+python3 test_razorpay_adapter.py # 18 tests, no network needed
+python3 test_recovery_actions.py # 36 tests, no network needed
 ```
 
 Then open `data/dashboard.html` in any browser. It is fully self-contained -- fonts, Three.js, and the force-graph library are vendored and inlined. It works with no network.
@@ -113,15 +117,15 @@ The page detects which mode it is in and says so. Neither mode is required by th
 |---|---|
 | `src/domain_rules.py` | The regulation. Decline taxonomy (soft/hard), NPCI 4-attempt cap, retry windows, RBI AFA thresholds. Sourced facts with citations, not assumptions. |
 | `src/synthetic_data.py` | Generates test batches and models recovery probabilities. Clearly labelled assumptions, not sourced. |
-| `src/policies.py` | Three policies: baseline (always SMS), bandit (Thompson Sampling, cost-aware), oracle (perfect information). |
+| `src/policies.py` | Three policies: baseline (always SMS), bandit (Thompson Sampling, cost-aware), oracle (perfect information). Also holds the channel costs and the mandated notice cost. |
 | `src/eval_harness.py` | Runs all three policies over 200 seeds, reports paired results. |
 | `src/audit_log.py` | Append-only JSONL, one line per decision. |
 | `src/pipeline_stats.py` | Rolls audit trail into per-stage, per-channel, per-window breakdowns. |
 | `src/explain_exceptions.py` | Uses an LLM to write plain-English explanations of decisions. LLM writes language only; every number comes from the audit trail. |
 | `src/razorpay_adapter.py` | Maps real Razorpay webhook payloads into the engine's domain objects. |
-| `src/recovery_actions.py` | The outbound edge. Turns each terminal branch into the concrete call it implies, re-derives compliance authorisation itself, and never sends. |
-| `src/test_razorpay_adapter.py` | 15 tests proving the adapter handles real payload shapes. |
-| `src/test_recovery_actions.py` | 22 tests, most of them asserting the executor refuses calls the rails forbid. |
+| `src/recovery_actions.py` | The outbound edge. Turns each terminal branch into the concrete call it implies, re-derives compliance authorisation itself, holds the `ContactLedger` that makes the attempt cap binding, sends the mandated pre-debit notice, and never sends anything for real. |
+| `src/test_razorpay_adapter.py` | 18 tests proving the adapter handles real payload shapes, including the `"error": null` Razorpay actually sends. |
+| `src/test_recovery_actions.py` | 36 tests, most of them asserting the executor refuses calls the rails forbid. |
 | `src/generate_dashboard.py` | Builds the self-contained HTML dashboard. |
 | `src/dashboard_live.py` | The engine ported to the browser, with every threshold and cost generated from the Python so the two cannot drift. |
 | `src/dashboard_race.py` | The head-to-head race: blind retry against the agent, same payments, same luck. |
@@ -152,7 +156,7 @@ Say these before a judge finds them.
 
 6. **The LLM writes language only.** It never makes a decision. Every number in its explanations comes from the audit trail. This is a design choice, but it means the "AI" in the demo is mostly the bandit, not the language model.
 
-7. **`domain_rules.py` encodes regulation as checked on 2026-08-22.** NPCI and RBI update circulars periodically. The cap, windows, and AFA thresholds should be re-verified before any production use.
+7. **The regulatory constants are sourced, but one is weaker than the others.** The RBI rules -- the AFA thresholds and the 24-hour pre-debit notification -- come from the Digital Payments E-mandate Framework, 2026, notified 21 April 2026, which consolidates the earlier circulars. The NPCI 4-attempt cap is an NPCI operating rule and no circular number is cited for it, so treat it as the weakest-sourced constant here. NPCI and RBI update these periodically, so re-verify before any production use.
 
 ## License
 

@@ -102,6 +102,52 @@ instead of turning into an SMS.
 A prior review found `requires_additional_factor_auth` defined and never
 called anywhere. That is exactly the failure this seam is placed to catch.
 
+A later review found the seam itself failing in the same way. The guard was
+stateless: it validated the `attempt_number` the caller passed and kept no
+memory of the payment, so the NPCI cap it claimed to enforce was enforced by
+the caller's honesty. Calling `contact()` eight times for one payment emitted
+eight authorised contacts against a three-retry cap, and `attempt_number` of 0
+and -1 were both accepted because the range was bounded only above.
+
+The cap is a fact about a payment, so it now lives in a `ContactLedger` that
+records the attempts actually contacted and hands them out through an atomic
+`reserve`. A refused or failed contact releases its reservation, so a delivery
+failure cannot quietly spend a legal retry. The server holds one long-lived
+ledger, because it builds an executor per request and a per-executor ledger
+would restart the count at zero on every webhook -- which is exactly how a
+real integration oversends. Replaying one webhook is now refused rather than
+re-sent.
+
+The same review found the guard checking `attempt_number` and `window_hours`
+separately, which accepted a 2nd attempt claiming the T+7d window: a retry
+outside the mandated schedule wearing a legal label. NPCI fixes which attempt
+lands in which window, so the pair is now checked as one fact.
+
+### The customer is notified before the debit
+
+`domain_rules` recorded that the framework requires advance notice before an
+auto-debit executes. Nothing sent one and nothing checked, so every contact in
+the system went out without the notice it is owed.
+
+The executor now emits that notice as an action and refuses to contact on an
+attempt that has none on record. Three deliberate choices sit behind it:
+
+- **It hangs off the attempt, not the window.** The notice is owed before a
+  collection, and a window the agent declines to use produces no collection.
+  Attaching it to the window would have made declining cost money, and quietly
+  removed the option of not attempting.
+- **It does not change recovery probabilities.** A real pre-debit notice
+  plainly affects whether a customer funds the account. This project has never
+  measured a world with one, so modelling that effect would mean inventing
+  probabilities, and every number downstream of them would be fiction. The
+  tables are untouched and the recovery rates are unchanged.
+- **It does not spend a retry.** Reaching a customer and consuming a regulated
+  attempt are different things. Counting the notice against the cap would let
+  a legal obligation eat a legal retry.
+
+It does cost money, and every policy pays it, the blind baseline included,
+because no policy may compete by not sending it.
+
 ### There is no live send
 
 `RecoveryExecutor._dispatch` raises `NotImplementedError`. `DryRunExecutor`
@@ -131,7 +177,7 @@ per-policy RNG stream. When two policies make the same choice they get the
 same outcome, so any difference in results is attributable to the decisions
 themselves rather than to luck.
 
-This is what makes the paired confidence interval legitimate: plus Rs 12,197
+This is what makes the paired confidence interval legitimate: plus Rs 12,198
 per batch, 95 percent CI plus 6,330 to plus 18,065, over 200 seeds.
 
 ### The model writes language and nothing else
@@ -156,8 +202,8 @@ python3 pipeline_stats.py
 python3 explain_exceptions.py      # needs a model endpoint, or --offline
 python3 generate_dashboard.py
 
-python3 test_razorpay_adapter.py   # 15 tests, no network
-python3 test_recovery_actions.py   # 22 tests, no network
+python3 test_razorpay_adapter.py   # 18 tests, no network
+python3 test_recovery_actions.py   # 36 tests, no network
 ```
 
 Then either open `data/dashboard.html` directly, or:

@@ -47,7 +47,7 @@ India's payment rails are not a free-for-all. Two bodies matter:
 - **RBI** (Reserve Bank of India) — the central bank, sets the framework.
 
 The constraints this project encodes (all in `src/domain_rules.py`, with
-sources in the file header, checked 2026-08-22):
+sources in the file header). The RBI rules come from the **RBI Digital Payments -- E-mandate Framework, 2026** (notified 21 April 2026), which consolidates the earlier e-mandate circulars:
 
 **The retry cap.** NPCI AutoPay allows a maximum of **4 total attempts per
 billing cycle** — 1 original execution plus 3 retries. Effective Aug 2025.
@@ -176,10 +176,10 @@ Razorpay notifies the customer **by email**. That's it. There is no choice
 between channels and no accounting for what a channel costs versus what it
 recovers.
 
-An IVR call converts better than an SMS but costs ~50× more. On a ₹200
-subscription an IVR call can cost more than the payment is worth; on a
-₹20,000 one it's obviously worth it. That trade-off is a *decision*, and
-nobody is currently making it.
+An IVR call converts better than an SMS but costs ~50× more. The trade-off
+that matters is not the call against the payment, it's the call against the
+*extra* recovery it buys over an SMS: ₹7.85 more, for a few points more
+probability. That's a *decision*, and nobody is currently making it.
 
 > *Pitch line:* "Recovery isn't free. We're the only version of this that
 > reports money recovered **net of what the recovery cost**."
@@ -270,8 +270,8 @@ you" does not.
 | `src/explain_exceptions.py` | Uses an LLM to write plain-English explanations of decisions. |
 | `src/razorpay_adapter.py` | Maps real Razorpay webhooks into the engine. |
 | `src/recovery_actions.py` | The outbound edge. Builds the concrete call each terminal branch implies, re-checks compliance itself, and never sends. |
-| `src/test_razorpay_adapter.py` | 15 tests proving the adapter handles the real payload shapes. |
-| `src/test_recovery_actions.py` | 22 tests, most asserting the executor refuses what the rails forbid. |
+| `src/test_razorpay_adapter.py` | 18 tests proving the adapter handles the real payload shapes. |
+| `src/test_recovery_actions.py` | 36 tests, most asserting the executor refuses what the rails forbid. |
 | `src/generate_dashboard.py` | Builds the self-contained HTML dashboard. |
 | `src/dashboard_live.py` | The engine ported to the browser, constants generated from the Python. |
 | `src/dashboard_race.py` | The head-to-head race against blind retry, same payments and same luck. |
@@ -328,12 +328,47 @@ Raw success probability isn't the objective — **money** is. So the bandit
 converts each sampled probability into expected rupees:
 
 ```
-expected_net = sampled_probability × payment_amount − channel_cost
+expected_net = sampled_probability × payment_amount
+               − channel_cost
+               − pre_debit_notice_cost
 ```
 
 and picks the highest. If both are negative — a small payment where even
 an SMS isn't worth it — it **skips the attempt entirely**. That's in
 `policies.py:BanditPolicy.choose`.
+
+The notice term is there because the mandated pre-debit notice is owed on
+any attempt. It's identical for both channels, so it cancels when choosing
+*between* them — but it does not cancel against not attempting at all, which
+is exactly the comparison the skip makes.
+
+Choosing between the channels therefore reduces to: does the extra
+probability an IVR call buys cover its extra ₹7.85? That crossover is
+computed from the same tables the simulator draws from:
+
+| Decline reason | Window | p(SMS) | p(IVR) | Δp | IVR pays above |
+|---|---|---|---|---|---|
+| `issuer_soft_decline` | T+24h | 0.144 | 0.208 | 0.064 | ₹123 |
+| `issuer_soft_decline` | T+72h | 0.180 | 0.260 | 0.080 | ₹98 |
+| `issuer_soft_decline` | T+7d | 0.198 | 0.286 | 0.088 | ₹89 |
+| `bank_server_timeout` | T+24h | 0.550 | 0.578 | 0.028 | ₹285 |
+| `bank_server_timeout` | T+72h | 0.550 | 0.578 | 0.028 | ₹285 |
+| `bank_server_timeout` | T+7d | 0.522 | 0.549 | 0.026 | ₹300 |
+| `insufficient_funds` | T+24h | 0.150 | 0.172 | 0.022 | ₹349 |
+| `insufficient_funds` | T+72h | 0.250 | 0.287 | 0.037 | ₹209 |
+| `insufficient_funds` | T+7d | 0.350 | 0.402 | 0.052 | ₹150 |
+
+Read that table honestly. Amounts here are drawn uniform(₹200, ₹25,000), so
+almost every payment sits above almost every crossover and the bandit
+upgrades to a call on the large majority of decisions. The arithmetic is
+genuinely being done — it is not decoration — but in *this* environment it
+functions as a guard on the small-payment tail rather than as a channel the
+agent frequently switches away from. A distribution with more weight under
+₹350, which is what a lot of Indian subscription billing actually looks
+like, is where the branch would start to bind hard. Reshaping the
+distribution to make the mechanism look busier would be fitting the
+environment to the story, which is the same error this section exists to
+correct.
 
 ---
 
@@ -382,13 +417,13 @@ more convincing than any single number.
 
 | Policy | Recovery | Net recovered | Cost per win |
 |---|---|---|---|
-| Baseline (retry all by SMS) | 37.16% | ₹261,660 | ₹0.55 |
-| **Bandit (this project)** | **39.11%** | **₹273,858** | ₹14.63 |
-| Oracle (perfect information) | 40.78% | ₹285,540 | ₹25.47 |
+| Baseline (retry all by SMS) | 37.16% | ₹261,648 | ₹1.11 |
+| **Bandit (this project)** | **39.11%** | **₹273,846** | ₹15.14 |
+| Oracle (perfect information) | 40.78% | ₹285,529 | ₹25.95 |
 
 60 events × 200 seeds. **Bandit captures 51.1% of achievable lift.**
 
-Paired lift over baseline: **+₹12,197 per batch** (95% CI +6,330 to
+Paired lift over baseline: **+₹12,198 per batch** (95% CI +6,330 to
 +18,065). The bandit beat the baseline in **126 of 200 batches (63%)** —
 not always, and saying so is the point.
 
@@ -453,8 +488,8 @@ python3 pipeline_stats.py        # roll up the audit trail
 python3 explain_exceptions.py    # LLM explanations (or --offline for templates)
 python3 generate_dashboard.py    # build data/dashboard.html
 
-python3 test_razorpay_adapter.py # 15 tests, no network needed
-python3 test_recovery_actions.py # 22 tests, no network needed
+python3 test_razorpay_adapter.py # 18 tests, no network needed
+python3 test_recovery_actions.py # 36 tests, no network needed
 ```
 
 Then open `data/dashboard.html` in any browser. It is fully
