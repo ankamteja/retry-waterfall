@@ -74,6 +74,25 @@ def main():
     ok &= check("unrelated events are ignored",
                 parse_webhook({"event": "payout.processed", "payload": {}}) is None)
 
+    # Razorpay puts the reason inside a nested error object, and sends that
+    # object as an explicit null when the attempt carries no error. The null
+    # is the shape that used to crash the parser.
+    nested = webhook("subscription.pending", reason="insufficient_funds")
+    nested["payload"]["payment"]["entity"].pop("error_reason")
+    nested["payload"]["payment"]["entity"]["error"] = {"reason": "insufficient_funds"}
+    s = parse_webhook(nested)
+    ok &= check("reason is read from the nested error object",
+                s.decline_code is DeclineCode.INSUFFICIENT_FUNDS)
+
+    null_error = webhook("subscription.pending", reason="insufficient_funds")
+    null_error["payload"]["payment"]["entity"].pop("error_reason")
+    null_error["payload"]["payment"]["entity"]["error"] = None
+    s = parse_webhook(null_error)
+    ok &= check("an explicit null error parses instead of crashing",
+                s is not None and s.decline_code is None)
+    ok &= check("and a signal with no decline code is not recoverable",
+                not s.should_recover)
+
     ev = to_event(parse_webhook(webhook("subscription.pending", reason="gateway_timeout")))
     ok &= check("recoverable signal converts to an engine event",
                 ev.decline_code is DeclineCode.BANK_SERVER_TIMEOUT and ev.amount_inr == 1499.00)

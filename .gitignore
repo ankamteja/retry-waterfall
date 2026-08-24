@@ -21,3 +21,6 @@ public/
 # Internal working notes, kept on disk and out of the public repo
 docs/BUILD_LOG.md
 docs/NEXT.md
+
+# Review notes, internal like the rest
+docs/REVIEW.md
