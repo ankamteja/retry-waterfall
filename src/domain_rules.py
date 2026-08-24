@@ -56,6 +56,12 @@ AFA_TRIGGER_GENERAL_INR = 15_000
 AFA_TRIGGER_ENHANCED_INR = 1_00_000
 AFA_ENHANCED_CATEGORIES = {"mutual_fund", "insurance", "credit_card_bill"}
 
+# The pre-debit notice is owed before a collection *attempt*, not before every
+# window the schedule permits. A window the agent declines to use produces no
+# debit, so it owes no notice -- which keeps declining to attempt a free
+# action, as it should be.
+PRE_DEBIT_NOTICE_HOURS = 24
+
 
 def requires_additional_factor_auth(amount_inr: float, category: str) -> bool:
     limit = AFA_TRIGGER_ENHANCED_INR if category in AFA_ENHANCED_CATEGORIES else AFA_TRIGGER_GENERAL_INR

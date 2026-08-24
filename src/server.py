@@ -138,6 +138,10 @@ def decide(event, category: str) -> dict:
                     "rationale": decision.rationale,
                 })
                 if decision.should_attempt:
+                    # Owed before the debit, so it precedes the contact here
+                    # exactly as it does in the evaluation.
+                    executor.notify_pre_debit(event.payment_id, event.amount_inr, category,
+                                              event.decline_code, i + 2, window_hours)
                     executor.contact(event.payment_id, event.amount_inr, category,
                                      event.decline_code, i + 2, window_hours,
                                      decision.channel, decision.rationale)

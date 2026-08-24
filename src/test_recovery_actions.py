@@ -27,6 +27,30 @@ from recovery_actions import (
 )
 
 
+def contacts(ex):
+    """The agent's own contacts, without the notice the law adds to each.
+
+    Counting raw actions would make every cap assertion below double when
+    the mandated notice started being emitted, which is a fact about the
+    law rather than about the cap.
+    """
+    return [a for a in ex.actions if a.kind is not ActionKind.SEND_PRE_DEBIT_ALERT]
+
+
+def notified(ex, payment_id, amount_inr, category, decline_code,
+             attempt_number, window_hours, channel, rationale="x"):
+    """Send the mandated notice, then contact -- the legal order.
+
+    Most of these tests are about the cap, the channel or the payload, not
+    about the notice, so they go through this rather than restating the two
+    calls every time.
+    """
+    ex.notify_pre_debit(payment_id, amount_inr, category, decline_code,
+                        attempt_number, window_hours)
+    return ex.contact(payment_id, amount_inr, category, decline_code,
+                      attempt_number, window_hours, channel, rationale)
+
+
 class TestGuards(unittest.TestCase):
     """Every one of these is a call the executor must refuse."""
 
@@ -50,7 +74,7 @@ class TestGuards(unittest.TestCase):
         """Same amount, mutual fund: the RBI enhanced limit is INR 1,00,000,
         so this one is permitted. If this test and the previous one ever
         agree, the category carve-out has been lost."""
-        action = self.ex.contact("pay_3", 20_000.0, "mutual_fund", DeclineCode.INSUFFICIENT_FUNDS,
+        action = notified(self.ex, "pay_3", 20_000.0, "mutual_fund", DeclineCode.INSUFFICIENT_FUNDS,
                                  attempt_number=2, window_hours=24, channel="sms", rationale="x")
         self.assertEqual(action.kind, ActionKind.SEND_SMS)
 
@@ -75,24 +99,64 @@ class TestGuards(unittest.TestCase):
         attempt number it is handed enforces nothing, because the caller
         picks that number -- this used to allow unlimited contacts."""
         for attempt, window in zip((2, 3, 4), (24, 72, 168)):
-            self.ex.contact("pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, "pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=attempt, window_hours=window,
                             channel="sms", rationale="x")
-        self.assertEqual(len(self.ex.actions), 3)
+        self.assertEqual(len(contacts(self.ex)), 3)
         with self.assertRaises(ComplianceViolation):
-            self.ex.contact("pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, "pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=4, window_hours=168, channel="sms", rationale="x")
-        self.assertEqual(len(self.ex.actions), 3)
+        self.assertEqual(len(contacts(self.ex)), 3)
 
     def test_the_same_attempt_cannot_be_contacted_twice(self):
         """Contacting attempt 2 twice is two contacts against a three-contact
         cap. Same window both times, so this tests the duplicate rule and not
         the attempt-to-window pairing."""
-        self.ex.contact("pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        notified(self.ex, "pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                         attempt_number=2, window_hours=24, channel="sms", rationale="x")
         with self.assertRaises(ComplianceViolation):
-            self.ex.contact("pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, "pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=2, window_hours=24, channel="sms", rationale="x")
+
+    def test_contact_without_a_pre_debit_notice_is_refused(self):
+        """The framework owes the customer notice before the debit. This was
+        written in the domain_rules docstring and enforced nowhere, so every
+        contact in the system went out without one."""
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_notice", 500.0, "subscription",
+                            DeclineCode.INSUFFICIENT_FUNDS, attempt_number=2,
+                            window_hours=24, channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 0)
+
+    def test_the_notice_permits_only_its_own_attempt(self):
+        """Notice for attempt 2 does not authorise a contact on attempt 3.
+        Otherwise one notice would cover a whole cycle of debits."""
+        self.ex.notify_pre_debit("pay_n2", 500.0, "subscription",
+                                 DeclineCode.INSUFFICIENT_FUNDS, 2, 24)
+        self.ex.contact("pay_n2", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                        attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_n2", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=3, window_hours=72, channel="sms", rationale="x")
+
+    def test_no_notice_is_owed_on_a_hard_decline(self):
+        """A notice announces a debit. Sending one where no collection will
+        follow tells the customer their account is about to be charged when
+        it is not."""
+        with self.assertRaises(ComplianceViolation):
+            self.ex.notify_pre_debit("pay_n3", 500.0, "subscription",
+                                     DeclineCode.MANDATE_REVOKED, 2, 24)
+
+    def test_the_notice_does_not_spend_a_retry(self):
+        """Reaching a customer and spending a regulated attempt are not the
+        same thing. If the notice counted against the cap, a legal obligation
+        would eat a legal retry."""
+        for attempt, window in zip((2, 3, 4), (24, 72, 168)):
+            notified(self.ex, "pay_n4", 500.0, "subscription",
+                     DeclineCode.INSUFFICIENT_FUNDS, attempt, window, "sms")
+        self.assertEqual(self.ex.ledger.attempts_for("pay_n4"), [2, 3, 4])
+        self.assertEqual(len(contacts(self.ex)), 3)
+        self.assertEqual(len(self.ex.actions), 6)
 
     def test_attempt_must_match_its_mandated_window(self):
         """NPCI fixes which attempt lands in which window, so the pair is one
@@ -104,7 +168,7 @@ class TestGuards(unittest.TestCase):
         with self.assertRaises(ComplianceViolation):
             self.ex.contact("pay_pair", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=4, window_hours=24, channel="sms", rationale="x")
-        self.assertEqual(len(self.ex.actions), 0)
+        self.assertEqual(len(contacts(self.ex)), 0)
 
     def test_a_shared_ledger_binds_across_executors(self):
         """The cap is per payment per cycle, but an executor is per request.
@@ -116,7 +180,7 @@ class TestGuards(unittest.TestCase):
         for attempt, window in ((2, 24), (3, 72), (4, 168), (4, 168)):
             per_request = DryRunExecutor(ledger=ledger)
             try:
-                per_request.contact("pay_shared", 500.0, "subscription",
+                notified(per_request, "pay_shared", 500.0, "subscription",
                                     DeclineCode.INSUFFICIENT_FUNDS, attempt_number=attempt,
                                     window_hours=window, channel="sms", rationale="x")
                 emitted += 1
@@ -135,7 +199,7 @@ class TestGuards(unittest.TestCase):
         def fire():
             ex = DryRunExecutor(ledger=ledger)
             try:
-                ex.contact("pay_race", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                notified(ex, "pay_race", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                            attempt_number=2, window_hours=24, channel="sms", rationale="x")
                 sent.append(1)
             except ComplianceViolation:
@@ -160,39 +224,39 @@ class TestGuards(unittest.TestCase):
 
         ex = Failing()
         with self.assertRaises(RuntimeError):
-            ex.contact("pay_retry", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(ex, "pay_retry", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                        attempt_number=2, window_hours=24, channel="sms", rationale="x")
         self.assertEqual(ex.ledger.attempts_for("pay_retry"), [])
 
         ok = DryRunExecutor(ledger=ex.ledger)
-        ok.contact("pay_retry", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        notified(ok, "pay_retry", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                    attempt_number=2, window_hours=24, channel="sms", rationale="x")
-        self.assertEqual(len(ok.actions), 1)
+        self.assertEqual(len(contacts(ok)), 1)
 
     def test_attempts_do_not_move_backwards(self):
-        self.ex.contact("pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        notified(self.ex, "pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                         attempt_number=3, window_hours=72, channel="sms", rationale="x")
         with self.assertRaises(ComplianceViolation):
-            self.ex.contact("pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, "pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=2, window_hours=24, channel="sms", rationale="x")
 
     def test_a_refused_contact_does_not_consume_an_attempt(self):
         """A blocked call must not spend one of the payment's three slots,
         or a bad channel would silently cost a legitimate retry."""
         with self.assertRaises(ComplianceViolation):
-            self.ex.contact("pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, "pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=2, window_hours=24, channel="whatsapp", rationale="x")
         for attempt, window in zip((2, 3, 4), (24, 72, 168)):
-            self.ex.contact("pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, "pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=attempt, window_hours=window,
                             channel="sms", rationale="x")
-        self.assertEqual(len(self.ex.actions), 3)
+        self.assertEqual(len(contacts(self.ex)), 3)
 
     def test_the_cap_is_per_payment_not_global(self):
         for payment in ("pay_a", "pay_b", "pay_c", "pay_d"):
-            self.ex.contact(payment, 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+            notified(self.ex, payment, 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=2, window_hours=24, channel="sms", rationale="x")
-        self.assertEqual(len(self.ex.actions), 4)
+        self.assertEqual(len(contacts(self.ex)), 4)
 
     def test_unmandated_retry_window_is_refused(self):
         """T+48h is not one of NPCI's windows. A policy inventing its own
@@ -243,9 +307,9 @@ class TestActions(unittest.TestCase):
         self.ex = DryRunExecutor()
 
     def test_channel_maps_to_action_kind(self):
-        sms = self.ex.contact("p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        sms = notified(self.ex, "p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                               2, 24, "sms", "x")
-        ivr = self.ex.contact("p2", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        ivr = notified(self.ex, "p2", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                               2, 24, "ivr_call", "x")
         self.assertEqual(sms.kind, ActionKind.SEND_SMS)
         self.assertEqual(ivr.kind, ActionKind.PLACE_IVR_CALL)
@@ -253,7 +317,7 @@ class TestActions(unittest.TestCase):
     def test_contact_payload_carries_no_pii(self):
         """The batch has no phone numbers. Inventing one to make the payload
         look finished would put fake customer data in a committed artifact."""
-        action = self.ex.contact("p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        action = notified(self.ex, "p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                                  2, 24, "sms", "x")
         blob = json.dumps(action.request)
         self.assertNotIn("phone", blob)
@@ -281,7 +345,7 @@ class TestActions(unittest.TestCase):
         self.assertIsNone(suppressed.provider)
 
     def test_every_action_names_the_rule_that_authorised_it(self):
-        self.ex.contact("p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, 2, 24, "sms", "x")
+        notified(self.ex, "p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, 2, 24, "sms", "x")
         self.ex.escalate_afa("p2", 20_000.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, "x")
         self.ex.suppress_hard_decline("p3", 500.0, DeclineCode.CARD_EXPIRED, "x")
         self.ex.escalate_manual("p4", 500.0, DeclineCode.INSUFFICIENT_FUNDS, "x")
@@ -289,7 +353,7 @@ class TestActions(unittest.TestCase):
             self.assertTrue(action.authorised_by)
 
     def test_dry_run_is_the_default_and_nothing_dispatches(self):
-        action = self.ex.contact("p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+        action = notified(self.ex, "p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                                  2, 24, "sms", "x")
         self.assertTrue(action.dry_run)
         self.assertTrue(self.ex.dry_run)
@@ -305,26 +369,32 @@ class TestOutputs(unittest.TestCase):
 
     def test_summary_counts_contacts_separately_from_actions(self):
         ex = DryRunExecutor()
-        ex.contact("p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, 2, 24, "sms", "x")
+        notified(ex, "p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, 2, 24, "sms", "x")
         ex.escalate_afa("p2", 20_000.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, "x")
         ex.suppress_hard_decline("p3", 500.0, DeclineCode.CARD_EXPIRED, "x")
         summary = ex.summary()
-        self.assertEqual(summary["total_actions"], 3)
-        self.assertEqual(summary["outbound_calls"], 2)
-        self.assertEqual(summary["customer_contacts"], 2)
+        # Four: the mandated notice, the SMS it precedes, the auth link and
+        # the suppression. The suppression is the only one that reaches
+        # nobody, which is what these three counts are separating.
+        self.assertEqual(summary["total_actions"], 4)
+        self.assertEqual(summary["outbound_calls"], 3)
+        self.assertEqual(summary["customer_contacts"], 3)
         self.assertTrue(summary["dry_run"])
 
     def test_jsonl_is_one_parseable_line_per_action(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "actions.jsonl")
             with DryRunExecutor(path) as ex:
-                ex.contact("p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, 2, 24, "sms", "x")
+                notified(ex, "p1", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS, 2, 24, "sms", "x")
                 ex.suppress_hard_decline("p2", 500.0, DeclineCode.CARD_EXPIRED, "x")
             with open(path) as f:
                 rows = [json.loads(line) for line in f]
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0]["kind"], "send_sms")
-        self.assertEqual(rows[1]["kind"], "suppress_no_retry")
+        self.assertEqual(len(rows), 3)
+        # The notice is written before the contact it announces, so the file
+        # reads in the order the customer experienced it.
+        self.assertEqual(rows[0]["kind"], "send_pre_debit_alert")
+        self.assertEqual(rows[1]["kind"], "send_sms")
+        self.assertEqual(rows[2]["kind"], "suppress_no_retry")
 
     def test_render_curl_never_prints_a_real_credential(self):
         ex = DryRunExecutor()

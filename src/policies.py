@@ -26,6 +26,14 @@ CHANNEL_COST_INR = {
     "ivr_call": 8.0,
 }
 
+# The mandated pre-debit notice is an SMS, so it costs what an SMS costs.
+# It is charged to every policy that attempts a collection, including the
+# blind baseline, because it is owed by law rather than chosen -- no policy
+# can compete by not sending it. It is deliberately kept out of the channel
+# table above: a policy chooses between the entries in that table, and it
+# never chooses this.
+PRE_DEBIT_NOTICE_COST_INR = CHANNEL_COST_INR["sms"]
+
 
 class Channel(str, Enum):
     SMS = "sms"
@@ -92,7 +100,12 @@ class BanditPolicy:
         best_net = None
         for channel in CHANNELS:
             p = self._sample_p(decline_code, window_hours, channel)
-            net = p * amount_inr - CHANNEL_COST_INR[channel]
+            # The notice is owed on any attempt, so it is part of what an
+            # attempt costs. It is identical for both channels and so
+            # cancels in the channel comparison -- but it does not cancel
+            # against not attempting at all, which is the comparison the
+            # skip below makes.
+            net = p * amount_inr - CHANNEL_COST_INR[channel] - PRE_DEBIT_NOTICE_COST_INR
             if best_net is None or net > best_net:
                 best_net = net
                 best_channel = channel
@@ -160,7 +173,12 @@ class OraclePolicy:
         best_net = None
         for channel in CHANNELS:
             p = recovery_probability(decline_code, window_hours, channel)
-            net = p * amount_inr - CHANNEL_COST_INR[channel]
+            # The notice is owed on any attempt, so it is part of what an
+            # attempt costs. It is identical for both channels and so
+            # cancels in the channel comparison -- but it does not cancel
+            # against not attempting at all, which is the comparison the
+            # skip below makes.
+            net = p * amount_inr - CHANNEL_COST_INR[channel] - PRE_DEBIT_NOTICE_COST_INR
             if best_net is None or net > best_net:
                 best_net = net
                 best_channel = channel
