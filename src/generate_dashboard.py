@@ -295,9 +295,29 @@ const C = {{teal:'#3B9B7D', red:'#C54D4D', amber:'#E8B86D', accent:'#4D7EE8', sl
 
 /* counters */
 const cu=(id,v,o)=>new countUp.CountUp(id,v,Object.assign({{duration:1.9}},o)).start();
-cu('k-risk', D.stats.money.at_risk_inr, {{prefix:'\\u20B9',separator:',',decimalPlaces:0}});
-cu('k-rec',  D.stats.money.net_recovered_inr, {{prefix:'\\u20B9',separator:',',decimalPlaces:0}});
+/* Indian digit grouping, the same inr() uses everywhere else. countUp's
+   `separator` groups in threes, so the masthead read 748,547 while every
+   other rupee figure on the page read 7,48,547. */
+const cuInr={{formattingFn:v=>inr(Math.round(v))}};
+cu('k-risk', D.stats.money.at_risk_inr, cuInr);
+cu('k-rec',  D.stats.money.net_recovered_inr, cuInr);
 cu('k-ref',  D.stats.hard_declines.length, {{suffix:' payments'}});
+
+/* Say what the four numbers above are. Without this they read as a live
+   readout that has stopped updating, when they are one reproducible run --
+   which is the point, not a defect. hudRace() below swaps them for a race
+   and rewrites this line, so the caption always names what is on screen. */
+(function(){{
+  const s=D.stats.stages, m=D.stats.money;
+  const n=s.ingest.in, rec=s.outcome.recovered;
+  const pct=(rec/n*100).toFixed(1);
+  window.HUD_AUDITED='<b>One audited run</b>, seed 0: '+n+' payments, '+rec+
+    ' recovered ('+pct+'%), '+s.compliance_gate.refused+' refused, '+
+    s.compliance_gate.afa_escalated+' escalated. Regenerating the evaluation '+
+    'returns these exact figures. The headline 39.11% is the mean over 200 '+
+    'seeds, so this single run sits above it.';
+  document.getElementById('hudSrc').innerHTML=window.HUD_AUDITED;
+}})();
 
 /* ---- signature: retry timeline ---- */
 (function(){{
