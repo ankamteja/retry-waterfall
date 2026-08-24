@@ -379,6 +379,49 @@ LIVE_CSS = r"""
 .stage.bad .sname{color:var(--refused);} .stage.warn .sname{color:var(--attention);}
 .stage.ok .sname{color:var(--recovered);}
 
+/* paired regulatory / agent track */
+.mt{font-size:13px;color:var(--text)}
+.mt,.mt *{box-sizing:border-box}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.mt-lane{display:grid;grid-template-columns:150px repeat(3,1fr);gap:12px;margin-top:18px}
+.mt-lane-reg{margin-top:0}
+.mt-tag{padding-left:10px;border-left:2px solid var(--attention);align-self:start}
+.mt-lane-agent .mt-tag{border-left-color:var(--accent)}
+.mt-tag b{display:block;font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.mt-tag span{display:block;margin-top:4px;font-size:11px;line-height:1.4;color:var(--dim)}
+.mt-slot{position:relative;min-height:94px;padding:12px 14px;border-radius:8px;display:flex;flex-direction:column;justify-content:center;gap:4px;transition:filter .15s}
+.mt-slot:hover{filter:brightness(1.14)}
+.mt-kick{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.mt-reg .mt-kick{color:var(--attention)}
+.mt-big{font-size:19px;font-weight:650;letter-spacing:.02em}
+.mt-sub{font-size:11.5px;color:var(--muted)}
+.mt-reg{border:1px solid color-mix(in srgb,var(--attention) 42%,transparent);border-left:3px solid var(--attention);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--attention) 13%,transparent) 0 6px,transparent 6px 12px),var(--surface)}
+.mt-reg.is-off{opacity:.55}
+.mt-flag{position:absolute;top:9px;right:9px;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--attention);border:1px solid color-mix(in srgb,var(--attention) 40%,transparent);background:var(--bg)}
+.mt-lane-agent .mt-slot::before{content:'';position:absolute;left:50%;top:-18px;height:18px;border-left:1px dashed var(--faint)}
+.mt-ch{display:flex;align-items:center;gap:8px;font-size:19px;font-weight:650;letter-spacing:.03em;text-transform:uppercase}
+.a-sent{border:1px solid color-mix(in srgb,var(--accent) 52%,transparent);border-left:3px solid var(--accent);background:linear-gradient(color-mix(in srgb,var(--accent) 9%,transparent),color-mix(in srgb,var(--accent) 9%,transparent)),var(--surface)}
+.a-skip{border:1px dashed color-mix(in srgb,var(--accent) 46%,transparent);background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
+.a-skip .mt-ch{color:var(--muted);font-weight:600}
+.a-none{border:1px solid var(--line);background:var(--surface)}
+.a-none .mt-ch{color:var(--dim);font-size:15px}
+.a-none .mt-sub{color:var(--faint)}
+.mt-chip{margin-top:6px;align-self:flex-start;display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;border:1px solid;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.c-won{color:var(--recovered);border-color:color-mix(in srgb,var(--recovered) 55%,transparent);background:color-mix(in srgb,var(--recovered) 13%,transparent)}
+.c-lost{color:var(--dim);border-color:var(--line-2)}
+.ic{width:13px;height:13px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.c-won .ic{width:11px;height:11px}
+.mt-legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 26px;margin:16px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted)}
+.lg{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.sw{width:11px;height:11px;flex:none;border-radius:3px;display:inline-flex;align-items:center;justify-content:center}
+.sw-reg{border:1px solid color-mix(in srgb,var(--attention) 55%,transparent);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--attention) 32%,transparent) 0 3px,transparent 3px 6px)}
+.sw-agt{border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 28%,transparent)}
+.sw-ok{width:auto;height:auto;border:0;color:var(--recovered)}
+.sw-ok .ic{width:12px;height:12px}
+.sw-off{border:1px dashed var(--faint)}
+.tw-a{color:var(--attention);font-weight:650}
+.tw-b{color:var(--accent);font-weight:650}
+
 /* per-window sampling detail */
 .wtable{margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden;}
 .wtable table{width:100%;border-collapse:collapse;font-size:.79rem;}
@@ -386,7 +429,7 @@ LIVE_CSS = r"""
   letter-spacing:.08em;padding:7px 11px;background:var(--surface-2);}
 .wtable td{padding:7px 11px;border-top:1px solid var(--line);}
 .wtable td.r{text-align:right;}
-.wtable tr.pick td{background:rgba(94,134,199,.09);}
+.wtable tr.pick td{background:rgba(77,126,232,.11);}
 .wtable tr.pick td:first-child{box-shadow:inset 2px 0 0 var(--accent);}
 .wlab{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--muted);
   padding:6px 11px;background:var(--surface-2);border-top:1px solid var(--line);}
@@ -398,7 +441,7 @@ LIVE_CSS = r"""
   font-family:"JetBrains Mono",monospace;font-size:.73rem;letter-spacing:.05em;}
 .pill{padding:2px 8px;border-radius:999px;font-size:.63rem;font-weight:700;letter-spacing:.07em;
   text-transform:uppercase;}
-.pill.rzp{background:rgba(94,134,199,.19);color:var(--accent);}
+.pill.rzp{background:rgba(77,126,232,.19);color:var(--accent);}
 .pill.comms{background:rgba(59,155,125,.17);color:var(--recovered);}
 .pill.none{background:rgba(255,255,255,.07);color:var(--dim);}
 .pill.dry{background:rgba(232,184,109,.15);color:var(--attention);}
@@ -533,6 +576,79 @@ function syncAmount(){
 const STAGE_NAME={ingest:'01 · Ingest',classify:'02 · Classify',gate:'03 · Compliance gate',
                  policy:'04 · Channel policy',outcome:'05 · Outcome'};
 
+/* The paired regulatory / agent track. Two lanes over the same three
+   mandated windows: the top one is what NPCI fixes, the bottom one is what
+   the agent chose. Amber is always a constraint, blue is always a choice,
+   and nothing on the agent lane can sit anywhere but under a block. */
+function mandateTrack(attempts){
+  const W=[{w:24,h:'T+24h',a:2},{w:72,h:'T+72h',a:3},{w:168,h:'T+7d',a:4}];
+  const by={}; attempts.forEach(e=>{ by[e.window]=e; });
+  const wonIdx=W.findIndex(x=>by[x.w]&&by[x.w].won);
+  const wonLbl=wonIdx>-1?W[wonIdx].h:null;
+  const LOCK='<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.2" y="7.2" width="9.6" height="6.4" rx="1.4"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/></svg>';
+  const CHK='<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.4 8.6l3 3 6.2-7.2"/></svg>';
+  const HOLD='<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.4"/><path d="M5.9 8h4.2"/></svg>';
+
+  const regCell=x=>{
+    const off=wonIdx>-1&&W.indexOf(x)>wonIdx;
+    return '<div class="mt-slot mt-reg'+(off?' is-off':'')+'">'
+      +'<span class="mt-kick">'+LOCK+'NPCI mandate</span>'
+      +'<span class="mt-big">'+x.h+'</span>'
+      +'<span class="mt-sub">Attempt '+x.a+' of '+E.maxAttempts+'</span>'
+      +(off?'<span class="mt-flag">Unused</span>':'')
+      +'</div>';
+  };
+
+  const agentCell=x=>{
+    const e=by[x.w]; let cls,body;
+    if(!e){
+      cls='a-none';
+      body='<span class="mt-kick">At '+x.h+'</span>'
+          +'<span class="mt-ch">Not reached</span>'
+          +'<span class="mt-sub">'+(wonLbl?('Cycle closed at '+wonLbl):'No entry in trace')+'</span>';
+    }else if(e.skipped){
+      cls='a-skip';
+      body='<span class="mt-kick">At '+x.h+'</span>'
+          +'<span class="mt-ch">'+HOLD+'Skipped</span>'
+          +'<span class="mt-sub">No send - best expected net negative</span>';
+    }else{
+      cls='a-sent'+(e.won?' a-won':'');
+      body='<span class="mt-kick">At '+x.h+'</span>'
+          +'<span class="mt-ch">'+E.channelLabel[e.best.channel]+'</span>'
+          +'<span class="mt-chip '+(e.won?'c-won':'c-lost')+'">'
+          +(e.won?(CHK+'Cleared'):'Not cleared')+'</span>';
+    }
+    return '<div class="mt-slot mt-agent '+cls+'">'+body+'</div>';
+  };
+
+  const acts=W.map(x=>{
+    const e=by[x.w];
+    if(!e) return x.h+': not reached';
+    if(e.skipped) return x.h+': skipped';
+    return x.h+': '+E.channelLabel[e.best.channel]+' sent, '+(e.won?'cleared':'not cleared');
+  }).join('; ');
+  const sum='Regulatory lane fixes three retry windows: T+24h, T+72h, T+7d, '
+    +'attempts 2 to '+E.maxAttempts+'. Agent lane: '+acts+'.';
+
+  return '<section class="mt" role="group" aria-label="Mandated windows versus agent channel choices">'
+    +'<p class="sr-only">'+sum+'</p>'
+    +'<div class="mt-lane mt-lane-reg">'
+    +  '<div class="mt-tag"><b>Regulatory</b><span>Mandates the WHEN</span></div>'
+    +  W.map(regCell).join('')
+    +'</div>'
+    +'<div class="mt-lane mt-lane-agent">'
+    +  '<div class="mt-tag"><b>Agent</b><span>Chooses the HOW</span></div>'
+    +  W.map(agentCell).join('')
+    +'</div>'
+    +'<p class="mt-legend">'
+    +  '<span class="lg"><i class="sw sw-reg"></i><b class="tw-a">Amber</b>&nbsp;- fixed by regulation</span>'
+    +  '<span class="lg"><i class="sw sw-agt"></i><b class="tw-b">Blue</b>&nbsp;- chosen by agent</span>'
+    +  '<span class="lg"><i class="sw sw-ok">'+CHK+'</i>Cleared</span>'
+    +  '<span class="lg"><i class="sw sw-off"></i>Window never reached</span>'
+    +'</p>'
+    +'</section>';
+}
+
 function windowTable(a){
   const rows=a.options.map(o=>{
     const pick=!a.skipped&&o.channel===a.best.channel;
@@ -586,7 +702,7 @@ function render(trace){
     const d=document.createElement('div');
     d.className='stage '+cls;
     d.innerHTML='<div class="sname">'+STAGE_NAME[s.stage]+'</div><div class="stext">'+s.text+'</div>'+
-      (s.attempts? s.attempts.map(windowTable).join('') : '');
+      (s.attempts? mandateTrack(s.attempts)+s.attempts.map(windowTable).join('') : '');
     out.appendChild(d); nodes.push(d);
   });
   const call=document.createElement('div');
@@ -745,7 +861,7 @@ NETWORK_CSS = r"""
   font-size:.68rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;color:var(--dim);}
 .llmbody{padding:12px 13px;font-size:.9rem;color:var(--text);min-height:2.4em;}
 .llmbody.wait{color:var(--dim);font-style:italic;}
-.pill.model{background:rgba(94,134,199,.19);color:var(--accent);}
+.pill.model{background:rgba(77,126,232,.19);color:var(--accent);}
 .pill.canned{background:rgba(255,255,255,.07);color:var(--dim);}
 """
 

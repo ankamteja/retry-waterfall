@@ -24,7 +24,7 @@ CONSOLE_CSS = r"""
   --bg:#07090F; --surface:#0D1119; --surface-2:#141A25; --surface-3:#1C2432;
   --line:rgba(230,238,252,.09); --line-2:rgba(230,238,252,.16);
   --text:#E6EAF4; --muted:#8A97B0; --dim:#5C6880; --faint:#454F63;
-  --recovered:#3B9B7D; --refused:#C54D4D; --attention:#E8B86D; --accent:#5E86C7;
+  --recovered:#3B9B7D; --refused:#C54D4D; --attention:#E8B86D; --accent:#4D7EE8;
   --s1:3px; --s2:6px; --s3:9px; --s4:12px; --s6:18px; --s8:24px;
   --r-sm:4px; --r-md:8px; --r-lg:12px;
 }
@@ -45,7 +45,7 @@ body{margin:0;background:var(--bg);color:var(--text);
   padding:var(--s4) var(--s6);border-bottom:1px solid var(--line);
   position:relative;overflow:hidden;background:var(--surface)}
 .masthead::before{content:"";position:absolute;left:-2%;top:-300%;width:44%;height:700%;
-  background:radial-gradient(ellipse at center,rgba(94,134,199,.13),transparent 68%);
+  background:radial-gradient(ellipse at center,rgba(77,126,232,.13),transparent 68%);
   pointer-events:none}
 .mark{width:30px;height:30px;border-radius:8px;position:relative;z-index:1;flex-shrink:0;
   background:linear-gradient(145deg,var(--recovered),var(--accent));
@@ -86,7 +86,7 @@ select,input[type=number]{width:100%;background:#04060B;color:var(--text);
   border:1px solid var(--line-2);border-radius:var(--r-sm);padding:9px 10px;
   font-family:inherit;font-size:12.5px;cursor:pointer;transition:border-color .18s,box-shadow .18s}
 select:focus-visible,button:focus-visible{outline:none;border-color:var(--accent);
-  box-shadow:0 0 0 3px rgba(94,134,199,.24)}
+  box-shadow:0 0 0 3px rgba(77,126,232,.30)}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .amtrow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--s2)}
 .amtval{font-family:"Space Grotesk",sans-serif;font-size:19px;font-weight:700}
