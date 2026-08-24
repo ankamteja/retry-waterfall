@@ -36,11 +36,18 @@ def build(policy: str = "bandit", seed: int = 0) -> dict:
     hard_ids = {r["payment_id"] for r in records if r["stopping_rule"] == "hard_decline_no_retry"}
     attempted = [r for r in records if r["channel"] is not None]
     recovered_ids = {r["payment_id"] for r in records if r["recovered"]}
-    skipped = [r for r in records if r["channel"] is None and r["stopping_rule"] != "hard_decline_no_retry"]
 
     afa_ids = {r["payment_id"] for r in records
                if r["stopping_rule"] == "afa_required_escalate_to_auth_link"}
     soft_ids = payments - hard_ids - afa_ids
+
+    # A policy-stage skip is the policy declining a window it was allowed to
+    # use. Defining it as "no channel, and not a hard decline" also swept up
+    # the AFA escalations, which never reach the policy at all -- so they were
+    # reported twice, once as gate escalations and again as policy skips, and
+    # the stage showed 3 skips where the policy had made none.
+    skipped = [r for r in records
+               if r["channel"] is None and r["payment_id"] in soft_ids]
     exhausted_ids = soft_ids - recovered_ids
 
     by_code = defaultdict(lambda: {"total": 0, "recovered": 0, "gross_inr": 0.0})
