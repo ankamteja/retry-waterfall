@@ -30,6 +30,29 @@ The deployed static site is the first of these, by design. The engine is
 genuinely running in your browser either way; what the server adds is live
 prose and real webhook ingestion.
 
+### The four figures under the masthead
+
+Revenue at risk, recovered net of cost, refused by compliance, escalated for
+auth. A line underneath names which run they describe, because four numbers
+with no caption read as a live readout that has frozen.
+
+By default they are **one audited run, seed 0** -- the same batch the
+evaluation regenerates, which is why they do not move on their own. That is
+the point of them rather than a defect: rerun `eval_harness.py` and you get
+the same figures back. The caption also says how that run relates to the
+published headline, since a single seed recovers 46.7% where the 200-seed
+mean is 39.11%.
+
+Press **Race 60 payments** and all four switch to that race, generated in
+your browser, with the caption changing to say so and a link back to the
+audited run. They update once when the race finishes rather than per payment:
+counted up live, "revenue at risk" climbs from zero, which reads as risk
+growing rather than a total being counted.
+
+If the race was run with the bandit's beliefs wiped, the caption says that
+too, so an untrained bandit's numbers cannot be mistaken for the shipped
+policy's.
+
 ---
 
 ## The five panes
@@ -44,6 +67,24 @@ evaluation.
 Run the same payment twice and it can pick a different channel. That is not a
 bug: Thompson Sampling samples a belief rather than reading a table, and
 showing that is the point.
+
+Above the per-window tables sits the **regulatory / agent track**: two lanes
+over the same three windows. The top lane is what NPCI fixes -- T+24h, T+72h,
+T+7d, hatched and locked, always all three regardless of what the agent did.
+The bottom lane is what the agent chose, and nothing on it can sit anywhere
+except under a mandated block.
+
+The colour law is the whole point, and it holds everywhere on the page:
+**amber is only ever a regulatory constraint, blue is only ever an agent
+choice.** A window the cycle never reached stays amber and marked unused, with
+a neutral grey cell below it, so a window nobody got to never reads as a
+decision. A window the agent declined is blue and dashed, because declining is
+still its call. Every state is written as a word as well as a colour.
+
+The outbound call shows the **mandated pre-debit notice** above the contact it
+announces. The customer is owed notice at least 24 hours before a collection,
+and the executor refuses to contact on an attempt that has no notice on
+record, so the demo shows it being sent rather than asserting it in prose.
 
 **Sample 200×** runs the same payment two hundred times and shows the
 distribution of channels chosen, which is the honest way to see a stochastic

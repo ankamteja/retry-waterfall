@@ -2,17 +2,29 @@
 Real payment-rail rules this project encodes, so the stopping/escalation
 logic is grounded in actual regulation, not invented.
 
-Sources (checked 2026-08-22):
+Primary source for the RBI rules below: the **Digital Payments -- E-mandate
+Framework, 2026**, notified 21 April 2026, which consolidates the earlier
+e-mandate circulars into one set of directions. Naming the framework rather
+than the date this file was last read is deliberate: a date says only when
+someone looked, and a reader cannot check it.
+
 - NPCI AutoPay/e-mandate retry cap: max 4 total attempts per cycle
-  (1 original execution + 3 retries), effective Aug 2025.
+  (1 original execution + 3 retries), effective Aug 2025. This one is an
+  NPCI operating rule rather than an RBI direction, and the circular number
+  is not cited here because it has not been located -- treat it as the
+  weakest-sourced constant in this file.
 - Retry windows: T+24h, T+72h, T+7d (then cycle marked failed, no penalty
   from bank/NPCI).
 - RBI additional-factor-auth (AFA) trigger: mandatory above INR 15,000
   general recurring payments; INR 1,00,000 enhanced limit carve-out for
-  mutual funds / insurance / credit-card bill payments.
-- Standard e-mandate pre-debit notification: customer must be notified
-  ahead of the debit (RBI's 2019 recurring-payment framework requires
-  advance notice before an auto-debit executes).
+  insurance premiums, mutual fund subscriptions and credit-card bill
+  payments -- those three categories only.
+- Pre-debit notification: the framework requires a pre-transaction
+  notification at least 24 hours before the debit, carrying the merchant
+  name, amount, date and time, the mandate reference and the reason, plus a
+  post-transaction notification afterwards. PRE_DEBIT_NOTICE_HOURS encodes
+  the 24 hours, and recovery_actions refuses to contact on an attempt with
+  no notice on record.
 
 These are the numbers a generic "AI dunning bot" clone won't bother
 encoding — most public dunning writeups (Stripe/Recurly/Chargebee) are

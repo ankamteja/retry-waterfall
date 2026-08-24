@@ -25,8 +25,13 @@ second, independent gate on the only step that can touch a customer, so a
 future policy bug cannot silently turn into an outbound contact. The
 `bounded` in "bounded recovery workflow" is enforced here, not assumed.
 
-Five terminal actions, one per branch the engine can reach:
+Six actions. One per branch the engine can reach, plus the notice the law
+adds to any branch that debits:
 
+    send_pre_debit_alert       owed to the customer at least 24h before a
+                               collection attempt. Not a recovery tactic and
+                               not the agent's choice: contacting is refused
+                               on an attempt with no notice on record
     send_sms                   soft decline, bandit picked SMS
     place_ivr_call             soft decline, bandit picked IVR
     create_auth_payment_link   over the RBI AFA threshold: a silent retry

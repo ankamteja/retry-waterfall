@@ -77,6 +77,7 @@ question a regulator or a merchant might ask.
 | `hard_decline_no_retry` | Refused at the gate. Never reached a policy. |
 | `afa_required_escalate_to_auth_link` | Above the RBI threshold. Routed to an authenticated link; the mandate's attempt budget is untouched. |
 | `npci_retry_cap_exhausted` | The last permitted window has been used. |
+| `policy_declined_all_windows` | The policy was allowed to use every window and chose none of them, because the expected net was negative each time. Previously logged as `npci_retry_cap_exhausted`, which blamed the regulation for the agent's own arithmetic. |
 | `null` | The payment is still inside its recovery window. |
 
 `pipeline_stats.py` refuses to build if any payment shows more than three
@@ -103,10 +104,11 @@ downstream number would be wrong. Failing loudly beats publishing it.
 | `window_hours` | int or null | |
 | `dry_run` | bool | Always true in this repository. |
 
-### The five action kinds
+### The six action kinds
 
 | Kind | Provider | Outbound call |
 |---|---|---|
+| `send_pre_debit_alert` | comms | The notice the customer is owed before a collection attempt. Not a recovery tactic and not the agent's decision. |
 | `send_sms` | comms | Template id plus variables. No vendor schema, because no vendor is chosen. |
 | `place_ivr_call` | comms | As above. |
 | `create_auth_payment_link` | razorpay | A real `POST /v1/payment_links`. |
@@ -127,9 +129,35 @@ deployment step and the only place a key would ever appear.
 
 Every emit re-derives authorisation from `domain_rules` instead of trusting
 the caller, and raises `ComplianceViolation` rather than producing an action.
-It checks four things: the decline is not hard, the amount is not above the
-authentication threshold for its category, the attempt number is within the
-NPCI cap, and the window is one of the mandated ones.
+A contact is refused unless all of the following hold:
+
+| Check | Refuses when |
+|---|---|
+| Hard decline | The decline is permanent for this cycle, so no retry contact is permitted. |
+| AFA threshold | The amount is above the authentication threshold for its category, so a silent retry cannot legally clear. |
+| Attempt range | `attempt_number` is outside `2..4`. Attempt 1 is the original debit, so no contact belongs to it, and an unbounded lower end previously let attempt 0 and attempt -1 through while still reading as "within the cap". |
+| Pre-debit notice | No notice is on record for this exact attempt. A notice for attempt 2 does not authorise a contact on attempt 3. |
+| Attempt and window agree | The pair disagrees with the mandated schedule. NPCI fixes which attempt lands in which window, so a 2nd attempt claiming the T+7d window is a retry outside the schedule wearing a legal label. |
+| The contact ledger | This payment has already used its three contacts, or this attempt has already been contacted, or the attempt number moved backwards. |
+
+**The ledger is what makes the cap real.** The cap is a fact about a payment,
+so a guard that only inspects the arguments in front of it enforces nothing --
+the caller picks those arguments. `ContactLedger` records the attempts actually
+contacted per payment, and `reserve` is the only way to consume one.
+
+- Reserving is atomic, because the demo server is a `ThreadingHTTPServer` and a
+  check that read the ledger and appended to it in two steps would let
+  concurrent requests for one payment each pass a check that was true when they
+  read it.
+- A contact that is refused, or that fails while being emitted, releases its
+  reservation. Otherwise a delivery failure would quietly cost a legal retry.
+- One ledger can be shared across executors. The server holds a single
+  long-lived one, because an executor is built per request and a per-executor
+  ledger would restart the count at zero on every webhook.
+
+The ledger is in memory, so the cap stops binding when the process ends. A
+deployment has to back it with a durable store. That is the honest boundary of
+the guarantee.
 
 ---
 
@@ -172,8 +200,9 @@ answer from the system, not a server fault.
 `dashboard_live.live_constants()` emits everything the browser engine needs as
 JSON at build time: the attempt cap, the retry windows, both authentication
 thresholds and the categories they apply to, the soft and hard sets, the
-channels and their costs, the amount range, the decline mix, the base
-probabilities, the window and channel multipliers, and the trained posteriors.
+channels and their costs, the pre-debit notice period and what the notice
+costs, the amount range, the decline mix, the base probabilities, the window
+and channel multipliers, and the trained posteriors.
 
 This is why the browser can run the real policy rather than a mock, and why it
 cannot drift: change a threshold in `domain_rules.py` and the page changes
