@@ -409,7 +409,7 @@ LIVE_CSS = r"""
 .mt-reg.is-off{opacity:.55}
 .mt-flag{position:absolute;top:9px;right:9px;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--attention);border:1px solid color-mix(in srgb,var(--attention) 40%,transparent);background:var(--bg)}
 .mt-lane-agent .mt-slot::before{content:'';position:absolute;left:50%;top:-18px;height:18px;border-left:1px dashed var(--faint)}
-.mt-ch{display:flex;align-items:center;gap:8px;font-size:19px;font-weight:650;letter-spacing:.03em;text-transform:uppercase}
+.mt-ch{display:flex;align-items:center;gap:8px;font-size:19px;font-weight:650;letter-spacing:.07em;text-transform:uppercase}
 .a-sent{border:1px solid color-mix(in srgb,var(--accent) 52%,transparent);border-left:3px solid var(--accent);background:linear-gradient(color-mix(in srgb,var(--accent) 9%,transparent),color-mix(in srgb,var(--accent) 9%,transparent)),var(--surface)}
 .a-skip{border:1px dashed color-mix(in srgb,var(--accent) 46%,transparent);background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
 .a-skip .mt-ch{color:var(--muted);font-weight:600}
