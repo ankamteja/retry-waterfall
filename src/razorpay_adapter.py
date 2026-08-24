@@ -93,7 +93,10 @@ def parse_webhook(payload: dict) -> RazorpaySignal | None:
     sub = entities.get("subscription", {}).get("entity", {}) or {}
     pay = entities.get("payment", {}).get("entity", {}) or {}
 
-    reason = (pay.get("error_reason") or pay.get("error", {}).get("reason")) or None
+    # Razorpay sends `"error": null` on the entity when the attempt carries no
+    # error object, so the key exists and `.get("error", {})` still yields None.
+    error = pay.get("error") or {}
+    reason = (pay.get("error_reason") or error.get("reason")) or None
     decline = REASON_TO_DECLINE.get(reason, UNMAPPED_DEFAULT) if reason else None
 
     auth_attempts = sub.get("auth_attempts", 0) or 0
