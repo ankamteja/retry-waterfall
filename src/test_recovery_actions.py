@@ -12,12 +12,14 @@ No network, no credentials, no arguments: python3 test_recovery_actions.py
 import json
 import os
 import tempfile
+import threading
 import unittest
 
 from domain_rules import DeclineCode, MAX_ATTEMPTS_PER_CYCLE
 from recovery_actions import (
     ActionKind,
     ComplianceViolation,
+    ContactLedger,
     DryRunExecutor,
     RecoveryExecutor,
     _paise,
@@ -57,6 +59,140 @@ class TestGuards(unittest.TestCase):
             self.ex.contact("pay_4", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
                             attempt_number=MAX_ATTEMPTS_PER_CYCLE + 1, window_hours=24,
                             channel="sms", rationale="x")
+
+    def test_attempt_below_the_first_retry_is_refused(self):
+        """Attempt 1 is the original debit, so a contact cannot belong to it,
+        and 0 and -1 are not attempts at all. An unbounded lower end let all
+        three through while still reading as 'within the cap'."""
+        for attempt in (1, 0, -1):
+            with self.subTest(attempt=attempt), self.assertRaises(ComplianceViolation):
+                self.ex.contact("pay_low", 500.0, "subscription",
+                                DeclineCode.INSUFFICIENT_FUNDS, attempt_number=attempt,
+                                window_hours=24, channel="sms", rationale="x")
+
+    def test_cap_binds_across_calls_on_one_payment(self):
+        """The cap is a per-payment fact. A guard that only validates the
+        attempt number it is handed enforces nothing, because the caller
+        picks that number -- this used to allow unlimited contacts."""
+        for attempt, window in zip((2, 3, 4), (24, 72, 168)):
+            self.ex.contact("pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=attempt, window_hours=window,
+                            channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 3)
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_cap", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=4, window_hours=168, channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 3)
+
+    def test_the_same_attempt_cannot_be_contacted_twice(self):
+        """Contacting attempt 2 twice is two contacts against a three-contact
+        cap. Same window both times, so this tests the duplicate rule and not
+        the attempt-to-window pairing."""
+        self.ex.contact("pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                        attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_dup", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="sms", rationale="x")
+
+    def test_attempt_must_match_its_mandated_window(self):
+        """NPCI fixes which attempt lands in which window, so the pair is one
+        fact, not two. Checked separately, a 2nd attempt could claim the T+7d
+        window: a retry outside the schedule wearing a legal label."""
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_pair", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=168, channel="sms", rationale="x")
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_pair", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=4, window_hours=24, channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 0)
+
+    def test_a_shared_ledger_binds_across_executors(self):
+        """The cap is per payment per cycle, but an executor is per request.
+        Without a shared ledger the demo path resets the count on every
+        request, so the original defect -- unlimited contacts for one
+        payment -- is still reachable, just one HTTP call at a time."""
+        ledger = ContactLedger()
+        emitted = 0
+        for attempt, window in ((2, 24), (3, 72), (4, 168), (4, 168)):
+            per_request = DryRunExecutor(ledger=ledger)
+            try:
+                per_request.contact("pay_shared", 500.0, "subscription",
+                                    DeclineCode.INSUFFICIENT_FUNDS, attempt_number=attempt,
+                                    window_hours=window, channel="sms", rationale="x")
+                emitted += 1
+            except ComplianceViolation:
+                pass
+        self.assertEqual(emitted, 3)
+        self.assertEqual(ledger.attempts_for("pay_shared"), [2, 3, 4])
+
+    def test_concurrent_calls_cannot_oversend(self):
+        """Check-then-record is not enough under a ThreadingHTTPServer: four
+        threads can each read an empty ledger before any of them writes, and
+        all four pass a check that was true when they read it."""
+        ledger = ContactLedger()
+        errors, sent = [], []
+
+        def fire():
+            ex = DryRunExecutor(ledger=ledger)
+            try:
+                ex.contact("pay_race", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                           attempt_number=2, window_hours=24, channel="sms", rationale="x")
+                sent.append(1)
+            except ComplianceViolation:
+                errors.append(1)
+
+        threads = [threading.Thread(target=fire) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(len(errors), 7)
+        self.assertEqual(ledger.attempts_for("pay_race"), [2])
+
+    def test_a_failed_dispatch_gives_the_attempt_back(self):
+        """A reservation taken and then not used would burn a legal retry
+        forever: the payment could never be contacted on that attempt again
+        because the ledger says it already was."""
+        class Failing(DryRunExecutor):
+            def _dispatch(self, action):
+                raise RuntimeError("comms provider is down")
+
+        ex = Failing()
+        with self.assertRaises(RuntimeError):
+            ex.contact("pay_retry", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                       attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        self.assertEqual(ex.ledger.attempts_for("pay_retry"), [])
+
+        ok = DryRunExecutor(ledger=ex.ledger)
+        ok.contact("pay_retry", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                   attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        self.assertEqual(len(ok.actions), 1)
+
+    def test_attempts_do_not_move_backwards(self):
+        self.ex.contact("pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                        attempt_number=3, window_hours=72, channel="sms", rationale="x")
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_back", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="sms", rationale="x")
+
+    def test_a_refused_contact_does_not_consume_an_attempt(self):
+        """A blocked call must not spend one of the payment's three slots,
+        or a bad channel would silently cost a legitimate retry."""
+        with self.assertRaises(ComplianceViolation):
+            self.ex.contact("pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="whatsapp", rationale="x")
+        for attempt, window in zip((2, 3, 4), (24, 72, 168)):
+            self.ex.contact("pay_free", 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=attempt, window_hours=window,
+                            channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 3)
+
+    def test_the_cap_is_per_payment_not_global(self):
+        for payment in ("pay_a", "pay_b", "pay_c", "pay_d"):
+            self.ex.contact(payment, 500.0, "subscription", DeclineCode.INSUFFICIENT_FUNDS,
+                            attempt_number=2, window_hours=24, channel="sms", rationale="x")
+        self.assertEqual(len(self.ex.actions), 4)
 
     def test_unmandated_retry_window_is_refused(self):
         """T+48h is not one of NPCI's windows. A policy inventing its own

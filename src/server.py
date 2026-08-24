@@ -43,7 +43,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from domain_rules import RETRY_WINDOWS_HOURS, is_hard_decline, requires_additional_factor_auth
 from policies import BanditPolicy
 from razorpay_adapter import parse_webhook, to_event
-from recovery_actions import ComplianceViolation, DryRunExecutor
+from recovery_actions import ComplianceViolation, ContactLedger, DryRunExecutor
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 PORT = int(os.environ.get("PORT", "8934"))
@@ -73,6 +73,14 @@ _subscribers_lock = threading.Lock()
 # instead of resetting per request. Seeded for a reproducible demo.
 _policy = BanditPolicy(seed=0)
 _policy_lock = threading.Lock()
+
+# One long-lived contact ledger, for the same reason and a stricter one. The
+# NPCI cap counts contacts per payment per cycle, and a cycle outlives any
+# single request -- so an executor built per request, with a ledger of its
+# own, would start every request at zero and the cap would bind nothing.
+# Replaying one webhook four times is exactly how a real integration
+# oversends. This is the state that refuses the fourth.
+_ledger = ContactLedger()
 
 
 def broadcast(event: dict) -> None:
@@ -106,7 +114,7 @@ def ask_llm(prompt: str) -> str:
 
 def decide(event, category: str) -> dict:
     """The same pipeline eval_harness runs, for one live payment."""
-    executor = DryRunExecutor()
+    executor = DryRunExecutor(ledger=_ledger)
     trace = {"payment_id": event.payment_id, "amount_inr": event.amount_inr,
              "category": category, "decline_code": event.decline_code.value,
              "attempts": [], "actions": []}
