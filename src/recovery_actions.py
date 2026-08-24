@@ -44,6 +44,7 @@ specific vendor's schema here would be fiction.
 """
 
 import json
+import threading
 from dataclasses import asdict, dataclass
 from enum import Enum
 
@@ -62,11 +63,12 @@ RAZORPAY_API_BASE = "https://api.razorpay.com/v1"
 MIN_RETRY_ATTEMPT = 2
 MAX_RETRY_CONTACTS_PER_CYCLE = MAX_ATTEMPTS_PER_CYCLE - MIN_RETRY_ATTEMPT + 1
 
-# How long an authenticated recovery link stays valid. Chosen to match the
-# outer edge of the NPCI retry schedule (T+7d) so the link and the mandate
-# cycle expire together rather than leaving a live payment URL behind after
-# the cycle has already been written off.
-AUTH_LINK_TTL_HOURS = RETRY_WINDOWS_HOURS[-1]
+# NPCI fixes the schedule, so an attempt number and a retry window are not
+# independent: the 2nd attempt is the T+24h one, the 3rd is T+72h, the 4th is
+# T+7d. Deriving the pairing keeps it correct if the windows ever change.
+ATTEMPT_TO_WINDOW_HOURS = {
+    MIN_RETRY_ATTEMPT + i: hours for i, hours in enumerate(RETRY_WINDOWS_HOURS)
+}
 
 
 class ComplianceViolation(Exception):
@@ -74,6 +76,75 @@ class ComplianceViolation(Exception):
     the payment rails do not permit. Never caught internally: an outbound
     call that breaches a mandate rule is a defect, not a condition to
     recover from."""
+
+
+class ContactLedger:
+    """What has actually been said to whom, this cycle.
+
+    The NPCI cap is a fact about a payment, not about a call, so a guard
+    that only inspects the arguments in front of it cannot enforce one --
+    the caller picks those arguments. This is the memory that makes the cap
+    binding, and `reserve` is the only way to consume an attempt.
+
+    Reserving is atomic. The demo server is a ThreadingHTTPServer, so a
+    check that read the ledger and appended to it in two steps would let
+    concurrent requests for one payment each pass a check that was true
+    when they read it and false by the time they wrote.
+
+    One instance covers one cycle for every executor that shares it. It is
+    in-memory, so the cap still stops binding when the process ends; a
+    deployment has to back this with a durable store. That is the honest
+    boundary of the guarantee.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._attempts: dict[str, list[int]] = {}
+
+    def attempts_for(self, payment_id: str) -> list[int]:
+        with self._lock:
+            return list(self._attempts.get(payment_id, []))
+
+    def reserve(self, payment_id: str, attempt_number: int) -> None:
+        """Consume one attempt for this payment, or raise and consume none."""
+        with self._lock:
+            already = self._attempts.get(payment_id, [])
+            if len(already) >= MAX_RETRY_CONTACTS_PER_CYCLE:
+                raise ComplianceViolation(
+                    f"{payment_id} has already been contacted {len(already)} times this "
+                    f"cycle (attempts {already}): the NPCI cap of {MAX_ATTEMPTS_PER_CYCLE} "
+                    f"allows {MAX_RETRY_CONTACTS_PER_CYCLE} recovery contacts"
+                )
+            if attempt_number in already:
+                raise ComplianceViolation(
+                    f"{payment_id} was already contacted on attempt {attempt_number}: "
+                    f"one contact per attempt"
+                )
+            if already and attempt_number < already[-1]:
+                raise ComplianceViolation(
+                    f"{payment_id} is on attempt {attempt_number} after attempt "
+                    f"{already[-1]}: attempts within a cycle only move forward"
+                )
+            self._attempts.setdefault(payment_id, []).append(attempt_number)
+
+    def release(self, payment_id: str, attempt_number: int) -> None:
+        """Give a reserved attempt back, for a contact that was never sent.
+
+        Without this, a dispatch that fails after the reservation burns one
+        of the payment's three attempts and the retry can never be made
+        again -- a delivery failure would quietly cost a legal retry.
+        """
+        with self._lock:
+            attempts = self._attempts.get(payment_id)
+            if attempts and attempt_number in attempts:
+                attempts.remove(attempt_number)
+
+
+# How long an authenticated recovery link stays valid. Chosen to match the
+# outer edge of the NPCI retry schedule (T+7d) so the link and the mandate
+# cycle expire together rather than leaving a live payment URL behind after
+# the cycle has already been written off.
+AUTH_LINK_TTL_HOURS = RETRY_WINDOWS_HOURS[-1]
 
 
 class ActionKind(str, Enum):
@@ -141,19 +212,18 @@ class RecoveryExecutor:
 
     dry_run = True
 
-    def __init__(self, path: str | None = None, callback_base_url: str = "https://merchant.example/recovery"):
+    def __init__(self, path: str | None = None,
+                 callback_base_url: str = "https://merchant.example/recovery",
+                 ledger: ContactLedger | None = None):
         self._path = path
         self._file = open(path, "w", encoding="utf-8") if path else None
         self._callback_base_url = callback_base_url
         self.actions: list[RecoveryAction] = []
-        # payment_id -> the attempt numbers already contacted on it. The cap
-        # is a per-payment fact, so a guard that only validates the number it
-        # is handed cannot enforce it; this is the memory that lets it.
-        #
-        # The ledger lives on the executor, so it covers one cycle of one
-        # process. A deployment that spans processes has to back this with a
-        # durable store, or the cap stops binding at the process boundary.
-        self._contacts_by_payment: dict[str, list[int]] = {}
+        # A caller that creates one executor per request needs to pass a
+        # shared ledger, or the cap is re-set to empty on every request and
+        # binds nothing. The default is a private one, which is right for
+        # the eval: one executor per seed is exactly one cycle.
+        self.ledger = ledger if ledger is not None else ContactLedger()
 
     # -- the seam ---------------------------------------------------------
 
@@ -194,28 +264,20 @@ class RecoveryExecutor:
                 f"original debit and the NPCI cap is {MAX_ATTEMPTS_PER_CYCLE} per cycle"
             )
 
-        # The cap counts contacts actually made on this payment, not the
-        # number the caller claims to be on.
-        already = self._contacts_by_payment.get(payment_id, [])
-        if len(already) >= MAX_RETRY_CONTACTS_PER_CYCLE:
+        # The attempt number and the window are not independent: NPCI fixes
+        # the schedule, so the 2nd attempt *is* the T+24h one. Checking each
+        # separately accepted a 2nd attempt claiming the T+7d window, which
+        # is a retry outside the mandated schedule wearing a legal label.
+        #
+        # This subsumes the old "is this one of the mandated windows" check:
+        # every value it can accept is drawn from RETRY_WINDOWS_HOURS, so a
+        # separate membership test after it could never fire.
+        expected = ATTEMPT_TO_WINDOW_HOURS[attempt_number]
+        if window_hours != expected:
             raise ComplianceViolation(
-                f"{payment_id} has already been contacted {len(already)} times this cycle "
-                f"(attempts {already}): the NPCI cap of {MAX_ATTEMPTS_PER_CYCLE} allows "
-                f"{MAX_RETRY_CONTACTS_PER_CYCLE} recovery contacts"
-            )
-        if attempt_number in already:
-            raise ComplianceViolation(
-                f"{payment_id} was already contacted on attempt {attempt_number}: "
-                f"one contact per attempt"
-            )
-        if already and attempt_number < already[-1]:
-            raise ComplianceViolation(
-                f"{payment_id} is on attempt {attempt_number} after attempt {already[-1]}: "
-                f"attempts within a cycle only move forward"
-            )
-        if window_hours not in RETRY_WINDOWS_HOURS:
-            raise ComplianceViolation(
-                f"retry window T+{window_hours}h is not one of the mandated windows {RETRY_WINDOWS_HOURS}"
+                f"attempt {attempt_number} is the T+{expected}h retry, not T+{window_hours}h. "
+                f"The mandated windows are {RETRY_WINDOWS_HOURS} and NPCI fixes which "
+                f"attempt lands in which -- the agent chooses the channel, never the timing"
             )
 
     # -- the five branches ------------------------------------------------
@@ -233,40 +295,47 @@ class RecoveryExecutor:
         """
         self._guard_contactable(payment_id, decline_code, amount_inr, category,
                                 attempt_number, window_hours)
+        # Checked before the attempt is reserved: an unknown channel is the
+        # caller's mistake, and it must not cost the payment a legal retry.
         kind = CHANNEL_TO_ACTION.get(channel)
         if kind is None:
             raise ComplianceViolation(f"unknown contact channel '{channel}'")
 
-        # Recorded only once the guard and the channel have both passed, so a
-        # refused call never consumes one of the payment's three attempts.
-        self._contacts_by_payment.setdefault(payment_id, []).append(attempt_number)
-
-        return self._emit(RecoveryAction(
-            payment_id=payment_id,
-            kind=kind,
-            amount_inr=amount_inr,
-            reason=rationale,
-            authorised_by=f"soft_decline_within_npci_cap (attempt {attempt_number}/{MAX_ATTEMPTS_PER_CYCLE})",
-            provider="comms",
-            request={
-                # Provider-agnostic on purpose: SMS and IVR are not Razorpay
-                # endpoints, and no vendor is chosen yet.
-                "channel": channel,
-                "template": f"recovery_{decline_code.value}_t{window_hours}h",
-                "variables": {
-                    "amount_inr": round(amount_inr, 2),
-                    "retry_window_hours": window_hours,
-                    "attempt_number": attempt_number,
+        # Reserving is the atomic step that consumes the attempt. Anything
+        # that fails after it hands the attempt back, so a dispatch error
+        # cannot quietly spend one of the payment's three retries.
+        self.ledger.reserve(payment_id, attempt_number)
+        try:
+            return self._emit(RecoveryAction(
+                payment_id=payment_id,
+                kind=kind,
+                amount_inr=amount_inr,
+                reason=rationale,
+                authorised_by=f"soft_decline_within_npci_cap (attempt {attempt_number}/{MAX_ATTEMPTS_PER_CYCLE})",
+                provider="comms",
+                request={
+                    # Provider-agnostic on purpose: SMS and IVR are not Razorpay
+                    # endpoints, and no vendor is chosen yet.
+                    "channel": channel,
+                    "template": f"recovery_{decline_code.value}_t{window_hours}h",
+                    "variables": {
+                        "amount_inr": round(amount_inr, 2),
+                        "retry_window_hours": window_hours,
+                        "attempt_number": attempt_number,
+                    },
+                    # No phone number: the batch carries none, and fabricating
+                    # PII to make a payload look complete would be worse than an
+                    # honest reference.
+                    "recipient_ref": payment_id,
                 },
-                # No phone number: the batch carries none, and fabricating
-                # PII to make a payload look complete would be worse than an
-                # honest reference.
-                "recipient_ref": payment_id,
-            },
-            attempt_number=attempt_number,
-            window_hours=window_hours,
-            dry_run=self.dry_run,
-        ))
+                attempt_number=attempt_number,
+                window_hours=window_hours,
+                dry_run=self.dry_run,
+            ))
+        except Exception:
+            # Never emitted, so the attempt was never used.
+            self.ledger.release(payment_id, attempt_number)
+            raise
 
     def escalate_afa(self, payment_id: str, amount_inr: float, category: str, decline_code,
                      rationale: str) -> RecoveryAction:
