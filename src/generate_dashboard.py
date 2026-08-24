@@ -154,7 +154,7 @@ def main():
   --recovered:#3B9B7D;  /* muted teal -- money moving, not lawn green */
   --refused:#C54D4D;    /* brick -- serious loss, not alarm */
   --attention:#E8B86D;  /* amber -- mandate/regulatory warnings */
-  --accent:#5E86C7;
+  --accent:#4D7EE8;
   --shadow-1:0 1px 2px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.05);
   --shadow-2:0 6px 20px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07);
 }}
@@ -288,7 +288,7 @@ footer{{color:var(--dim);font-size:.79rem;margin-top:56px;padding-top:22px;
 <script>{vendor('3d-force-graph.min.js')}</script>
 <script>
 const D = {payload};
-const C = {{teal:'#3B9B7D', red:'#C54D4D', amber:'#E8B86D', accent:'#5E86C7', slate:'#3E4A63'}};
+const C = {{teal:'#3B9B7D', red:'#C54D4D', amber:'#E8B86D', accent:'#4D7EE8', slate:'#3E4A63'}};
 /*LIVE_ENGINE*/
 /*LIVE_NETWORK*/
 /*LIVE_UI*/
